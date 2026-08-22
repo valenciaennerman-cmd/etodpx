@@ -1,0 +1,37 @@
+# Derleme ciktilari -------------------------------------------------------
+# bin/ tamamen uretilen bir klasordur: build.cmd her seyi yeniden olusturur.
+bin/
+*.exe
+*.pdb
+*.old.exe
+
+# WinDivert surucusu ------------------------------------------------------
+# Ayri bir projedir (LGPLv3 / GPLv2) ve depoya konmaz.
+# tools/setup-windivert.cmd resmi surum sayfasindan indirir.
+WinDivert.dll
+WinDivert*.sys
+WinDivert.lib
+
+# Gunlukler ---------------------------------------------------------------
+# DIKKAT: bu dosyalar hangi siteleri test ettigini icerir. Depoya konmamali.
+*.log
+dpetoos-tune.log
+dpetoos-test.log
+
+# Kullaniciya ozel ayar ---------------------------------------------------
+# Depodaki sablon kok dizindeki dpetoos.conf; bin/dpetoos.conf kisiye ozeldir
+# (dpetoos-tune.exe hatta gore yazar).
+bin/dpetoos.conf
+
+# Uretilen simge onizlemeleri (assets/dpetoos.ico DEPOYA GIRER) --------------
+assets/preview-*.png
+assets/dpetoos-?.ico
+
+# Isletim sistemi / editor ------------------------------------------------
+Thumbs.db
+desktop.ini
+.vs/
+.vscode/
+*.user
+__pycache__/
+*.pyc

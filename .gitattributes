@@ -1,0 +1,20 @@
+# Depoda LF, Windows'ta calisma kopyasinda CRLF.
+* text=auto
+
+# Windows betikleri CRLF olmali: LF ile kaydedilirse cmd.exe bazi surumlerde
+# satirlari yanlis ayristirir.
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# Kaynak ve belgeler
+*.cs    text
+*.py    text
+*.md    text
+*.conf  text
+*.manifest text
+*.config   text
+
+# Ikili dosyalar
+*.ico   binary
+*.png   binary
