@@ -713,16 +713,37 @@ namespace Etodpx.Tune
                 System.Reflection.Assembly.GetExecutingAssembly().Location);
             string expected = Path.GetFullPath(Path.Combine(dir, "etodpx.exe"));
             var matching = new List<Process>();
+            var elsewhere = new List<string>();
             foreach (var p in procs)
             {
                 try
                 {
                     string actual = Path.GetFullPath(p.MainModule.FileName);
                     if (string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)) matching.Add(p);
-                    else p.Dispose();
+                    else { elsewhere.Add(actual); p.Dispose(); }
                 }
                 catch { p.Dispose(); }
             }
+
+            // Baska bir klasordeki kopya calisiyorsa bunu SOYLEMEK sart: ayari
+            // buraya yaziyoruz ama kullanici oradaki uygulamaya bakiyor olabilir.
+            // Sessiz kalirsa "tuner kazanan buldu ama hicbir sey degismedi"
+            // durumu olusur ve sebebi hic anlasilmaz.
+            if (elsewhere.Count > 0)
+            {
+                WL();
+                WL("  DIKKAT: baska bir klasorden calisan etodpx var:");
+                foreach (var path in elsewhere) WL("    " + path);
+                WL();
+                WL("  Ayari BU klasore yazacagim:");
+                WL("    " + Path.Combine(dir, "etodpx.conf"));
+                WL();
+                WL("  Yukaridaki kopyayi kullaniyorsan ayar ona islemez. Fazla");
+                WL("  kopyalari silip tek klasorden calis, yoksa hangisinin");
+                WL("  ayarlandigi surekli karisir.");
+                WL();
+            }
+
             if (matching.Count == 0) return true;
 
             _etodpxWasRunning = true;
