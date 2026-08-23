@@ -93,14 +93,14 @@ nslookup discord.com 1.1.1.1
 
 İki cevap tamamen farklıysa DNS'in zehirli.
 
-**Aynı ISS'te bile değişir.** DNS engelini görüp görmemen, modeminin cihazlara
-hangi çözümleyiciyi dağıttığına bağlı. Test ettiğim ağda ISS'in kendi DNS
-sunucuları `discord.com` için hâlâ engel sayfası döndürüyor, ama modem
-cihazlara başka bir çözümleyici dağıttığı için hiçbir bilgisayarda elle ayar
-gerekmedi — üç ayrı cihazda doğrulandı. Başka bir modemde tam tersi olabilir.
+**Türkiye'de büyük ihtimalle gerekecek.** Test ettiğim hatta ISS'in DNS
+sunucuları `discord.com` için engel sayfasını (`195.175.254.2`) döndürüyor.
+Elle ayarlanan `1.1.1.1 / 1.0.0.1` kaldırılıp otomatiğe dönüldüğünde Discord
+tekrar açılmaz hale geldi — yani DHCP ile gelen çözümleyici zehirli.
 
-Bu yüzden "önce DNS'i değiştir" diye bir adım yok: `dpetoos-tune.exe` bunu
-kendisi ölçüp `DNS ZEHIRLI` diye söylüyor ve ne yapman gerektiğini yazıyor.
+Yine de bunu peşinen yapma: `dpetoos-tune.exe` DNS'i sistem çözümleyicisiyle
+iki bağımsız kaynağı karşılaştırarak ölçüyor ve gerekiyorsa `DNS ZEHIRLI` deyip
+adımları yazıyor. Gerekmiyorsa boşuna uğraşmamış olursun.
 
 ---
 
