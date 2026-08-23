@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo.
-echo   dpetoos derleniyor
+echo   etodpx derleniyor
 echo   ----------------
 
 rem --- C# derleyicisi: Windows ile birlikte gelir, kurulum gerekmez -----------
@@ -25,12 +25,12 @@ if not exist "%WPF%\PresentationFramework.dll" (
 
 if not exist "bin" mkdir "bin"
 
-rem --- simge: assets\dpetoos.ico depoda hazir gelir, yoksa Python ile uretilir -
-if not exist "assets\dpetoos.ico" if exist "tools\make_icon.py" (
+rem --- simge: assets\etodpx.ico depoda hazir gelir, yoksa Python ile uretilir -
+if not exist "assets\etodpx.ico" if exist "tools\make_icon.py" (
   where python >nul 2>nul && python "tools\make_icon.py" >nul 2>nul
 )
 set "ICONOPT="
-if exist "assets\dpetoos.ico" set "ICONOPT=/win32icon:assets\dpetoos.ico"
+if exist "assets\etodpx.ico" set "ICONOPT=/win32icon:assets\etodpx.ico"
 
 rem --- kaynaklari UTF-8 BOM ile normalize et (Turkce karakterler icin) -------
 if exist "tools\localize.py" (
@@ -39,15 +39,15 @@ if exist "tools\localize.py" (
 
 rem --- calisan bir surum varsa exe kilitlidir. Windows calisan bir dosyayi
 rem     yeniden adlandirmaya izin verir; yeni derleme boylece engellenmez.
-del /q "bin\dpetoos.old.exe" >nul 2>nul
-if exist "bin\dpetoos.exe" ren "bin\dpetoos.exe" "dpetoos.old.exe" >nul 2>nul
+del /q "bin\etodpx.old.exe" >nul 2>nul
+if exist "bin\etodpx.exe" ren "bin\etodpx.exe" "etodpx.old.exe" >nul 2>nul
 
 echo   derleyici   : %CSC%
 echo.
 
 "%CSC%" /nologo /target:winexe /platform:x64 /unsafe+ /optimize+ /debug- ^
   /warn:3 /nowarn:1701,1702 ^
-  /out:"bin\dpetoos.exe" ^
+  /out:"bin\etodpx.exe" ^
   %ICONOPT% ^
   /win32manifest:"src\app.manifest" ^
   /r:"%FW%\System.Xaml.dll" ^
@@ -59,19 +59,19 @@ echo.
 if errorlevel 1 (
   echo.
   echo   DERLEME BASARISIZ
-  if exist "bin\dpetoos.old.exe" if not exist "bin\dpetoos.exe" ren "bin\dpetoos.old.exe" "dpetoos.exe"
+  if exist "bin\etodpx.old.exe" if not exist "bin\etodpx.exe" ren "bin\etodpx.old.exe" "etodpx.exe"
   exit /b 1
 )
 
 rem Eski surum hala calisiyorsa silinemez; sorun degil, sonraki derlemede gider.
-del /q "bin\dpetoos.old.exe" >nul 2>nul
+del /q "bin\etodpx.old.exe" >nul 2>nul
 
 rem --- yan dosyalar ----------------------------------------------------------
-copy /y "src\dpetoos.exe.config" "bin\dpetoos.exe.config" >nul
-if not exist "bin\dpetoos.conf" copy /y "dpetoos.conf" "bin\dpetoos.conf" >nul
+copy /y "src\etodpx.exe.config" "bin\etodpx.exe.config" >nul
+if not exist "bin\etodpx.conf" copy /y "etodpx.conf" "bin\etodpx.conf" >nul
 
 echo.
-echo   TAMAM  ^-^>  bin\dpetoos.exe
+echo   TAMAM  ^-^>  bin\etodpx.exe
 if not exist "bin\WinDivert.dll" (
   echo.
   echo   NOT: bin\WinDivert.dll eksik. Calistirmadan once

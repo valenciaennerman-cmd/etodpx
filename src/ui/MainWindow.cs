@@ -1,4 +1,4 @@
-﻿// dpetoos - ana pencere. Tamami kod ile kurulur (XAML yok), boylece
+﻿// etodpx - ana pencere. Tamami kod ile kurulur (XAML yok), boylece
 // tek bir csc.exe cagrisiyla derlenir ve ek arac gerektirmez.
 //
 // Baslik cubugu dugmeleri hakkinda:
@@ -17,9 +17,9 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using Dpetoos.Engine;
+using Etodpx.Engine;
 
-namespace Dpetoos.Ui
+namespace Etodpx.Ui
 {
     internal sealed class MainWindow : Window
     {
@@ -65,7 +65,7 @@ namespace Dpetoos.Ui
             if (cfg.Warnings.Count > 0)
                 _configWarning = string.Join("\n", cfg.Warnings.ToArray());
 
-            Title = "dpetoos";
+            Title = "etodpx";
             Width = 384;
             Height = 470;
             WindowStyle = WindowStyle.None;
@@ -160,7 +160,7 @@ namespace Dpetoos.Ui
             });
             brand.Children.Add(new TextBlock
             {
-                Text = "dpetoos",
+                Text = "etodpx",
                 Foreground = _text,
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
@@ -343,7 +343,7 @@ namespace Dpetoos.Ui
             if (_configWarning != null)
             {
                 MessageBox.Show("Ayar dosyasında düzeltilmesi gereken noktalar var:\n\n" +
-                    _configWarning, "dpetoos - ayar uyarısı",
+                    _configWarning, "etodpx - ayar uyarısı",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             if (_cfg.AutoStart && !_engine.IsRunning) OnPowerClick();
@@ -431,7 +431,7 @@ namespace Dpetoos.Ui
                 // site acilmayinca uygulamayi bozuk sanmasin diye bunu soyluyoruz.
                 _subtitle.Text = UsesFakePacket()
                     ? "DPI atlatma çalışıyor"
-                    : "Temel kip · açılmayan site varsa dpetoos-tune.exe çalıştır";
+                    : "Temel kip · açılmayan site varsa etodpx-tune.exe çalıştır";
                 _footer.Text = FooterInfo();
             }
             else

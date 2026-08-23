@@ -1,10 +1,10 @@
-﻿// dpetoos - ayar dosyasi (dpetoos.conf). Arayuzde ayar yok; guc kullanicilari icin dosya.
+﻿// etodpx - ayar dosyasi (etodpx.conf). Arayuzde ayar yok; guc kullanicilari icin dosya.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
-namespace Dpetoos
+namespace Etodpx
 {
     internal sealed class Config
     {
@@ -16,7 +16,7 @@ namespace Dpetoos
         public string SplitPos = "host";          // host | midsld | 1..N (sabit ofset)
         public bool FakeBadSum = false;           // sahte paketi bozuk TCP checksum ile gonder
         public bool FakeTtl = false;              // sahte TCP paketi; hatta gore ayarlanmadan acilmaz
-        public int FakeTtlValue = 4;              // hatta gore degisir - dpetoos-tune ile bul
+        public int FakeTtlValue = 4;              // hatta gore degisir - etodpx-tune ile bul
         public bool FakeWrongSeq = false;         // sahte paketi pencere disi seq ile gonder
         public int FakeWrongSeqDelta = 0x10000;   // gercek seq bu kadar geriden
         public int FakeCount = 1;                 // her tur icin sahte paket sayisi
@@ -37,7 +37,7 @@ namespace Dpetoos
         // Paket is parcaciklari zaten Highest onceliginde ve neredeyse hep
         // WinDivertRecv icinde bloke bekliyor. Surecin TAMAMINI yukseltmek
         // arayuzu de yukseltir ve tam ekran bir oyunla islemci yarisina sokar.
-        // Varsayilan kapali; gerekirse dpetoos.conf ile acilir.
+        // Varsayilan kapali; gerekirse etodpx.conf ile acilir.
         public bool HighPriority = false;
         public short DivertPriority = 0;
 

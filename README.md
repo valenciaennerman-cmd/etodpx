@@ -1,4 +1,4 @@
-# dpetoos
+# etodpx
 
 Windows için DPI atlatma aracı. GoodbyeDPI ve zapret ile aynı işi yapar, ama
 tek bir tasarım hedefi var: **ping'e ve hıza dokunmamak.**
@@ -10,7 +10,7 @@ Arayüzde tek bir düğme var: başlat/durdur. Başka hiçbir şey yok.
 ## Hızlı başlangıç
 
 ```bat
-dpetoos.cmd
+etodpx.cmd
 ```
 
 Bu kadar. Betik gerekirse derler, WinDivert eksikse indirir, sonra uygulamayı
@@ -23,7 +23,7 @@ Elle yapmak istersen:
 ```bat
 build.cmd
 tools\setup-windivert.cmd
-bin\dpetoos.exe
+bin\etodpx.exe
 ```
 
 Gereken tek şey Windows'un kendisi — .NET SDK, Visual Studio, Node, hiçbiri
@@ -33,7 +33,7 @@ gerekmiyor. Derleyici (`csc.exe`) Windows ile birlikte geliyor.
 ### Site hâlâ açılmıyorsa
 
 ```bat
-bin\dpetoos-tune.exe acilmayansite.com
+bin\etodpx-tune.exe acilmayansite.com
 ```
 
 Bu araç **tahmin etmez, ölçer.** Önce engelin cinsini bulur:
@@ -42,20 +42,20 @@ Bu araç **tahmin etmez, ölçer.** Önce engelin cinsini bulur:
 |---|---|
 | `zaten aciliyor` | Bir şey yapma, o sitede engel yok |
 | `DNS ZEHIRLI` | DNS'ini **1.1.1.1 / 1.0.0.1** yap — araç adım adım söyler |
-| `SNI engeli` | Hiçbir şey; araç 31 stratejiyi dener ve doğrusunu `dpetoos.conf`'a yazar |
-| `IP seviyesinde engel` | dpetoos bunu aşamaz, VPN gerekir |
+| `SNI engeli` | Hiçbir şey; araç 31 stratejiyi dener ve doğrusunu `etodpx.conf`'a yazar |
+| `IP seviyesinde engel` | etodpx bunu aşamaz, VPN gerekir |
 | `alan adi cozulemiyor` | Yazım hatası |
 
-Sonra dpetoos'u yeniden başlat.
+Sonra etodpx'i yeniden başlat.
 
 > **Önemli:** Depodaki `fake_ttl_value = 4` yalnızca örnek başlangıç değeridir.
 > Sahte TCP paketi varsayılan olarak kapalıdır; bu değer ancak `fake_ttl = true`
 > yapıldığında kullanılır. Doğru değer operatöre ve hatta göre değişir — onu
-> güvenle bulan araç `dpetoos-tune.exe`'dir.
+> güvenle bulan araç `etodpx-tune.exe`'dir.
 
 ### Ayarı başka cihaza taşıma — çalışmaz
 
-`bin\dpetoos.conf` dosyasını kopyalayıp başka bir makinede kullanmak **işe
+`bin\etodpx.conf` dosyasını kopyalayıp başka bir makinede kullanmak **işe
 yaramaz**, aynı evdeki başka bir bilgisayarda bile. Sebebi `fake_ttl_value`:
 bu sayı, sahte paketin DPI kutusuna ulaşması için kaç hop yaşayacağını söyler
 ve makineden makineye değişir.
@@ -72,10 +72,10 @@ hepsi aynı sonucu verir.
 **Doğrusu:** her yeni cihazda bir kez ayarlayıcıyı çalıştır.
 
 ```bat
-bin\dpetoos-tune.exe discord.com
+bin\etodpx-tune.exe discord.com
 ```
 
-Klasörü paylaşırken `bin\dpetoos.conf` dosyasını **hiç koyma** — uygulama ilk
+Klasörü paylaşırken `bin\etodpx.conf` dosyasını **hiç koyma** — uygulama ilk
 açılışta güvenli şablondan kendisi üretir.
 
 ### DNS ne zaman gerekir?
@@ -83,7 +83,7 @@ açılışta güvenli şablondan kendisi üretir.
 Sadece ISS'in o alan adı için sahte adres döndürüyorsa. Türkiye'de bazı siteler
 DNS'ten, bazıları SNI'dan engelli — ikisi ayrı şeyler. Örneğin bu satırların
 yazıldığı hatta `discord.com` DNS'ten de SNI'dan da engelliyken `x.com` sadece
-SNI'dan engelliydi. dpetoos paketleri parçalar; DNS seni baştan yanlış sunucuya
+SNI'dan engelliydi. etodpx paketleri parçalar; DNS seni baştan yanlış sunucuya
 yollarsa yapabileceği bir şey yoktur. Kendin bakmak istersen:
 
 ```bat
@@ -98,7 +98,7 @@ sunucuları `discord.com` için engel sayfasını (`195.175.254.2`) döndürüyo
 Elle ayarlanan `1.1.1.1 / 1.0.0.1` kaldırılıp otomatiğe dönüldüğünde Discord
 tekrar açılmaz hale geldi — yani DHCP ile gelen çözümleyici zehirli.
 
-Yine de bunu peşinen yapma: `dpetoos-tune.exe` DNS'i sistem çözümleyicisiyle
+Yine de bunu peşinen yapma: `etodpx-tune.exe` DNS'i sistem çözümleyicisiyle
 iki bağımsız kaynağı karşılaştırarak ölçüyor ve gerekiyorsa `DNS ZEHIRLI` deyip
 adımları yazıyor. Gerekmiyorsa boşuna uğraşmamış olursun.
 
@@ -110,7 +110,7 @@ Bu tür araçların çoğu 80/443 üzerindeki **bütün** paketleri kullanıcı 
 çeker, inceler ve geri enjekte eder. Her paket için kernel↔userspace gidiş
 dönüşü demek bu — indirme sırasında saniyede on binlerce kez.
 
-dpetoos bunu yapmaz. Filtre WinDivert sürücüsünün içinde, çekirdekte değerlendirilir
+etodpx bunu yapmaz. Filtre WinDivert sürücüsünün içinde, çekirdekte değerlendirilir
 ve yalnızca şunları geçirir:
 
 | Yakalanan | Yakalanmayan |
@@ -141,7 +141,7 @@ Motor tarafında da gecikme oynamasın diye:
 ## Nasıl çalışıyor
 
 Engelleme, DPI kutusunun TLS ClientHello içindeki alan adını (SNI) ya da HTTP
-`Host:` başlığını okumasıyla oluyor. dpetoos bunu üç katmanda bozuyor:
+`Host:` başlığını okumasıyla oluyor. etodpx bunu üç katmanda bozuyor:
 
 **1. Sahte paket (decoy).** Gerçek veriden hemen önce, aynı sıra numarasıyla
 zararsız bir alan adı taşıyan sahte bir ClientHello gönderilir. DPI ilk gördüğü
@@ -154,7 +154,7 @@ bunu işler. Sahte paket sunucuya asla ulaşmaz:
 
 Üçü de aynı işi farklı yoldan yapar ve **hangisinin çalıştığı hatta göre
 değişir**. Test ettiğim Türk Telekom hattında yalnızca TTL yöntemi işe yaradı;
-diğer ikisi hiçbir şey açmadı. Bu yüzden `dpetoos-tune.exe` var — doğru olanı
+diğer ikisi hiçbir şey açmadı. Bu yüzden `etodpx-tune.exe` var — doğru olanı
 tahminle değil ölçerek buluyor.
 
 **2. Bölme (split).** Gerçek istek, tam olarak alan adının ana etiketinin
@@ -191,7 +191,7 @@ paketlerin tamamı eleniyor, gerçek olanlar geçmeye devam ediyor.
 
 ### Oyun oynuyorsan
 
-dpetoos oyun trafiğine dokunmaz, ama iki noktaya dikkat edildi:
+etodpx oyun trafiğine dokunmaz, ama iki noktaya dikkat edildi:
 
 - **UDP/443'te QUIC olmayan trafik.** Steam Datagram Relay (CS2 ve diğer Valve
   oyunları) kısıtlı ağlarda oyun trafiğini UDP/443 üzerine düşürebilir. Sadece
@@ -210,8 +210,8 @@ atlatma çalışmaya devam eder.
 
 ## Ayarlar
 
-Arayüzde ayar yok; hepsi `bin\dpetoos.conf` içinde. Değiştirdikten sonra
-dpetoos'u yeniden başlat.
+Arayüzde ayar yok; hepsi `bin\etodpx.conf` içinde. Değiştirdikten sonra
+etodpx'i yeniden başlat.
 
 | Anahtar | Varsayılan | Ne yapar |
 |---|---|---|
@@ -220,7 +220,7 @@ dpetoos'u yeniden başlat.
 | `quic` | `fake` | `fake` (hızı korur), `drop` (TCP'ye düşürür, en uyumlu), `off` |
 | `split_pos` | `host` | `host`, `midsld` veya sabit bayt sayısı |
 | `fake_ttl` | `false` | Sahte TCP paketini düşük TTL ile yolla; önce ayarlayıcıyla ölçülmeli |
-| `fake_ttl_value` | `4` | **Hatta göre değişir** — `dpetoos-tune.exe` ile bul |
+| `fake_ttl_value` | `4` | **Hatta göre değişir** — `etodpx-tune.exe` ile bul |
 | `fake_badsum` | `false` | Sahteyi bozuk checksum ile yolla |
 | `fake_wrongseq` | `false` | Sahteyi pencere dışı sıra numarasıyla yolla |
 | `http_host_case` | `false` | HTTP `Host:` başlığını RFC uyumlu `hOSt:` biçimine dönüştürür |
@@ -236,7 +236,7 @@ Evrensel doğru ayar yok — sadece **senin hattında** çalışan ayar var. Onu
 bir araç var:
 
 ```bat
-bin\dpetoos-tune.exe acilmayansite.com
+bin\etodpx-tune.exe acilmayansite.com
 ```
 
 Buraya **açılmayan sitenin gerçek adresini** yaz — `discord.com`, `x.com` gibi.
@@ -245,15 +245,15 @@ Araç önce engelin cinsini teşhis eder:
 
 | Teşhis | Anlamı |
 |---|---|
-| `alan adi cozulemiyor` | Yazım hatası ya da DNS engeli — dpetoos'un konusu değil |
-| `IP seviyesinde engel` | TCP bağlantısı bile kurulmuyor, dpetoos aşamaz |
+| `alan adi cozulemiyor` | Yazım hatası ya da DNS engeli — etodpx'in konusu değil |
+| `IP seviyesinde engel` | TCP bağlantısı bile kurulmuyor, etodpx aşamaz |
 | `zaten aciliyor` | Burada engel yok |
-| `SNI engeli` | **dpetoos bunu aşabilir** — tarama başlar |
+| `SNI engeli` | **etodpx bunu aşabilir** — tarama başlar |
 
 Sadece son durumda 31 stratejiyi tek tek dener. Her biriyle gerçek TLS el
 sıkışması yapar (sertifika doğrulaması **açık** — engel sayfası başarı
-sayılmaz), sıralamayı gösterir ve kazananı `dpetoos.conf` dosyasına yazar.
-Çalışan dpetoos varsa ölçüm için durdurur; bitince yeniden başlat.
+sayılmaz), sıralamayı gösterir ve kazananı `etodpx.conf` dosyasına yazar.
+Çalışan etodpx varsa ölçüm için durdurur; bitince yeniden başlat.
 
 Gerçek bir çıktı (Türk Telekom hattı, hedef discord.com):
 
@@ -280,11 +280,11 @@ ne kadar düşükse sunucuya ulaşıp bağlantı bozma riski o kadar az.
 ## Dosya düzeni
 
 ```
-dpetoos/
-  dpetoos.cmd              tek tıkla derle + kur + çalıştır
+etodpx/
+  etodpx.cmd              tek tıkla derle + kur + çalıştır
   build.cmd              yalnızca derler
-  dpetoos.conf             varsayılan ayarlar (şablon)
-  assets/dpetoos.ico       uygulama simgesi
+  etodpx.conf             varsayılan ayarlar (şablon)
+  assets/etodpx.ico       uygulama simgesi
   src/
     Program.cs           giriş noktası, yönetici kontrolü, tek örnek kilidi
     Config.cs            ayar dosyası okuyucu
@@ -334,7 +334,7 @@ tools	est	est-all.cmd
 |---|---|---|---|
 | Öz test | 79 | hayır | Motor mantığı, ayar doğrulama, ayrıştırıcılar, filtre söz dizimi |
 | Yayın denetimi | 22 | hayır | Temiz klonu sıfırdan derler, sızıntı arar |
-| Ağ paketi | 67 | dpetoos açık olmalı | Gerçek bağlantılar, ping, hız, yan hasar |
+| Ağ paketi | 67 | etodpx açık olmalı | Gerçek bağlantılar, ping, hız, yan hasar |
 
 **Yayın denetimi** GitHub'a atmadan önce en önemlisi: git'in gerçekten takip
 edeceği dosyaları boş bir klasöre kopyalar ve orada sıfırdan derler. "Bende
@@ -363,7 +363,7 @@ akış-ortası verinin es geçildiğini kanıtlar.
 
 Bu sürüm çalışır durumda ölçüldü:
 
-| Ölçüm | dpetoos kapalı | dpetoos açık |
+| Ölçüm | etodpx kapalı | etodpx açık |
 |---|---|---|
 | ping 1.1.1.1 paket kaybı | 0/12 | 0/20 |
 | ping ortalama | 9 ms | 8 ms |
@@ -379,7 +379,7 @@ kayıp oranı değişmedi.
 
 ### Kapsamlı test paketi
 
-dpetoos **açıkken** çalıştır — 67 kontrol, yönetici gerekmez:
+etodpx **açıkken** çalıştır — 67 kontrol, yönetici gerekmez:
 
 ```bat
 tools	est	est.cmd
@@ -402,7 +402,7 @@ Bütün TLS testleri **tam sertifika doğrulamasıyla** yapılır — engel sayf
 başarı sayılmaz. İçlerinde bir de negatif test var: `expired.badssl.com`
 bilerek reddedilmeli, edilmiyorsa doğrulama çalışmıyor demektir.
 
-Sonuç `bin\dpetoos-test.log` dosyasına da yazılır.
+Sonuç `bin\etodpx-test.log` dosyasına da yazılır.
 
 ### Arayüzü tasarımla oynarken görmek için (yönetici gerekmez):
 
@@ -414,8 +414,8 @@ powershell -File tools\uipreview\shoot.ps1 -State on
 
 ## Sorun giderme
 
-**Site hâlâ engel sayfasına gidiyor** — dpetoos DNS'e dokunmaz. ISS'inin DNS'i
-engelli alan adı için sahte IP döndürüyorsa, dpetoos ne yaparsa yapsın engel
+**Site hâlâ engel sayfasına gidiyor** — etodpx DNS'e dokunmaz. ISS'inin DNS'i
+engelli alan adı için sahte IP döndürüyorsa, etodpx ne yaparsa yapsın engel
 sayfasına bağlanırsın (belirtisi: sertifika adı uyuşmazlığı hatası). Kontrol et:
 
 ```bat
@@ -428,7 +428,7 @@ ağ adaptörü varsa yanlışına yazmış olabilirsin, `Get-DnsClientServerAddr
 ile hangisinin aktif olduğunu gör.
 
 **"Yönetici izni gerekiyor"** — WinDivert bir çekirdek sürücüsü, yönetici
-olmadan yüklenemez. `bin\dpetoos.exe` zaten yönetici isteyecek şekilde
+olmadan yüklenemez. `bin\etodpx.exe` zaten yönetici isteyecek şekilde
 imzalanmış manifest taşıyor; UAC penceresini onayla.
 
 **"Sürücü Windows tarafından engellendi"** — Windows Güvenliği → Cihaz
@@ -441,10 +441,10 @@ bütün araçlar aynı sürücüyü kullanır.
 
 **Koruma birden durduysa** — motor kendi kendine durursa (sürücü hatası, güvenlik
 yazılımı müdahalesi) pencere hatayı gösterir, tepsideyken de baloncuk uyarısı
-çıkar. Ayrıca `bin\dpetoos-fault.log` dosyasına zaman damgalı olarak yazılır.
+çıkar. Ayrıca `bin\etodpx-fault.log` dosyasına zaman damgalı olarak yazılır.
 Dosya yoksa hiç arıza olmamış demektir — sorunu başka yerde aramak lazım.
 
-**Bir şey bozulduysa** — dpetoos'u kapat. Tüm değişiklikler süreç ömrüyle
+**Bir şey bozulduysa** — etodpx'i kapat. Tüm değişiklikler süreç ömrüyle
 sınırlı; kapanınca sürücü kaldırılır, ağ yapılandırmasında kalıcı hiçbir
 iz bırakmaz. Kayıt defterine, hosts dosyasına, DNS ayarlarına dokunmaz.
 
@@ -452,7 +452,7 @@ iz bırakmaz. Kayıt defterine, hosts dosyasına, DNS ayarlarına dokunmaz.
 
 ## Notlar
 
-- WinDivert (LGPLv3 / GPLv2) ayrı bir projedir, dpetoos onu yalnızca kullanır.
+- WinDivert (LGPLv3 / GPLv2) ayrı bir projedir, etodpx onu yalnızca kullanır.
   `tools\setup-windivert.cmd`, dosyayı `github.com/basil00/WinDivert` resmi
   sürüm sayfasından indirir ve SHA256 özetini ekrana yazar — GitHub'daki
   değerle karşılaştırabilirsin.
@@ -460,5 +460,5 @@ iz bırakmaz. Kayıt defterine, hosts dosyasına, DNS ayarlarına dokunmaz.
   WinDivert 2.2.2 sürümü üçüncü taraf bir sertifikayla imzalanmış (Chengdu
   Misi Ting Technology). Bu, upstream'in yayımladığı resmi ikilinin kendisidir —
   GoodbyeDPI ve zapret de aynı dosyayı kullanır. Bilerek kurmuş ol.
-- dpetoos trafiği şifrelemez ve yeniden yönlendirmez. VPN değildir; sadece
+- etodpx trafiği şifrelemez ve yeniden yönlendirmez. VPN değildir; sadece
   gönderdiğin paketleri DPI'ın okuyamayacağı şekilde parçalar.

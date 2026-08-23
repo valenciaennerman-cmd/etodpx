@@ -1,8 +1,8 @@
-﻿// dpetoos - pencere gorunumu icin kucuk Win32 dokunuslari
+﻿// etodpx - pencere gorunumu icin kucuk Win32 dokunuslari
 using System;
 using System.Runtime.InteropServices;
 
-namespace Dpetoos.Ui
+namespace Etodpx.Ui
 {
     internal static class Native
     {

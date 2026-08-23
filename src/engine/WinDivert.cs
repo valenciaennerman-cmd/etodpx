@@ -1,9 +1,9 @@
-﻿// dpetoos - WinDivert 2.x interop layer
+﻿// etodpx - WinDivert 2.x interop layer
 // Sadece cekirdek surucusuyle konusan ince katman. Hot-path'te allocation yok.
 using System;
 using System.Runtime.InteropServices;
 
-namespace Dpetoos.Engine
+namespace Etodpx.Engine
 {
     internal enum DivertLayer
     {

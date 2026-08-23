@@ -1,12 +1,12 @@
-﻿// dpetoos - otomatik strateji bulucu
+﻿// etodpx - otomatik strateji bulucu
 //
 // DPI kutulari operatore, sehre, hatta abonelik tipine gore farkli davranir.
 // "Dogru" ayar yoktur; sadece SENIN hattinda calisan ayar vardir.
 // Bu arac stratejileri tek tek deneyip her biriyle gercek TLS el sikismasi
 // yapar (sertifika dogrulamasi ACIK - engel sayfasi basari sayilmaz) ve
-// kazanani dpetoos.conf dosyasina yazar.
+// kazanani etodpx.conf dosyasina yazar.
 //
-// Yonetici olarak calistirilmali. Calisan dpetoos varsa once durdurulur.
+// Yonetici olarak calistirilmali. Calisan etodpx varsa once durdurulur.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -18,10 +18,10 @@ using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
-using Dpetoos;
-using Dpetoos.Engine;
+using Etodpx;
+using Etodpx.Engine;
 
-namespace Dpetoos.Tune
+namespace Etodpx.Tune
 {
     internal sealed class Strategy
     {
@@ -63,7 +63,7 @@ namespace Dpetoos.Tune
         private static string[] _targets;
         private const int TriesPerTarget = 3;
         private static bool _auto;
-        private static bool _dpetoosWasRunning;
+        private static bool _etodpxWasRunning;
         private static readonly StringBuilder _log = new StringBuilder();
 
         private static void W(string s) { Console.Write(s); _log.Append(s); }
@@ -73,7 +73,7 @@ namespace Dpetoos.Tune
         private static int Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
-            Console.Title = "dpetoos - strateji bulucu";
+            Console.Title = "etodpx - strateji bulucu";
 
             var rest = new List<string>();
             foreach (var a in args)
@@ -96,26 +96,26 @@ namespace Dpetoos.Tune
             if (cleaned.Count == 0)
             {
                 WL("  Gecerli bir alan adi verilmedi.");
-                WL("  Ornek: dpetoos-tune.exe discord.com");
+                WL("  Ornek: etodpx-tune.exe discord.com");
                 Pause();
                 return 1;
             }
             _targets = cleaned.ToArray();
 
             WL();
-            WL("  dpetoos strateji bulucu");
+            WL("  etodpx strateji bulucu");
             WL("  =====================");
             WL("  hedefler : " + string.Join(", ", _targets));
             WL();
 
-            if (!StopRunningDpetoos()) return Finish(1);
+            if (!StopRunningEtodpx()) return Finish(1);
 
             if (!Preflight()) { Pause(); return Finish(3); }
 
             var strategies = BuildStrategies();
 
             WL("  " + strategies.Count + " strateji denenecek.");
-            WL("  Once dpetoos KAPALI iken olcum aliniyor...");
+            WL("  Once etodpx KAPALI iken olcum aliniyor...");
             WL();
 
             int baseline = RunTests();
@@ -127,7 +127,7 @@ namespace Dpetoos.Tune
             {
                 WL("  Hedefler korumasiz da aciliyor - burada asilacak bir engel yok.");
                 WL("  Farkli bir hedef verip tekrar dene:");
-                WL("    dpetoos-tune.exe engellisite.com");
+                WL("    etodpx-tune.exe engellisite.com");
                 WL();
                 Pause();
                 return Finish(0);
@@ -180,7 +180,7 @@ namespace Dpetoos.Tune
             string ans = null;
             if (!_auto)
             {
-                W("  dpetoos.conf dosyasina yazilsin mi? [E/h] ");
+                W("  etodpx.conf dosyasina yazilsin mi? [E/h] ");
                 ans = Console.ReadLine();
             }
             if (ans != null && ans.Trim().ToLowerInvariant().StartsWith("h"))
@@ -195,7 +195,7 @@ namespace Dpetoos.Tune
 
             WriteConf(best);
             WL();
-            WL("  Yazildi. dpetoos'u yeniden baslat.");
+            WL("  Yazildi. etodpx'i yeniden baslat.");
             WL();
             Pause();
             return Finish(0);
@@ -238,7 +238,7 @@ namespace Dpetoos.Tune
         private enum Diag { Open, NoDns, DnsPoisoned, IpBlocked, SniBlocked, Unreachable }
 
         /// <summary>
-        /// Taramadan once engelin CINSINI belirler. dpetoos yalnizca SNI engelini
+        /// Taramadan once engelin CINSINI belirler. etodpx yalnizca SNI engelini
         /// asabilir; DNS ya da IP engelinde 31 strateji denemenin anlami yok.
         /// </summary>
         private static bool Preflight()
@@ -258,16 +258,16 @@ namespace Dpetoos.Tune
                         msg = "alan adi cozulemiyor - DNS'te boyle bir kayit yok";
                         break;
                     case Diag.DnsPoisoned:
-                        msg = "DNS ZEHIRLI - once DNS'i duzelt, dpetoos bunu asamaz";
+                        msg = "DNS ZEHIRLI - once DNS'i duzelt, etodpx bunu asamaz";
                         break;
                     case Diag.IpBlocked:
-                        msg = "IP seviyesinde engel - TCP baglantisi bile kurulmuyor, dpetoos asamaz";
+                        msg = "IP seviyesinde engel - TCP baglantisi bile kurulmuyor, etodpx asamaz";
                         break;
                     case Diag.Open:
                         msg = "zaten aciliyor - burada asilacak engel yok";
                         break;
                     case Diag.SniBlocked:
-                        msg = "SNI engeli - dpetoos bunu asabilir";
+                        msg = "SNI engeli - etodpx bunu asabilir";
                         anySni = true;
                         break;
                     default:
@@ -282,7 +282,7 @@ namespace Dpetoos.Tune
             if (_dnsPoisoned)
             {
                 WL("  ISS'inin DNS sunucusu bu alan adi icin sahte bir adres donduruyor.");
-                WL("  dpetoos paketleri parcalar; DNS seni bastan yanlis sunucuya");
+                WL("  etodpx paketleri parcalar; DNS seni bastan yanlis sunucuya");
                 WL("  yollarsa yapabilecegi bir sey yoktur. Once DNS'i degistir:");
                 WL();
                 WL("    Ayarlar > Ag ve Internet > (Ethernet veya Wi-Fi) > DNS sunucusu atamasi");
@@ -302,7 +302,7 @@ namespace Dpetoos.Tune
             {
                 WL("  Taranacak bir SNI engeli bulunamadi, strateji taramasi atlaniyor.");
                 WL("  Gercek ve engelli bir site adiyla tekrar dene, ornegin:");
-                WL("    dpetoos-tune.exe discord.com");
+                WL("    etodpx-tune.exe discord.com");
                 WL();
                 return false;
             }
@@ -605,14 +605,14 @@ namespace Dpetoos.Tune
 
         // ---------------------------------------------------------------- yardimci
 
-        private static bool StopRunningDpetoos()
+        private static bool StopRunningEtodpx()
         {
-            var procs = Process.GetProcessesByName("dpetoos");
+            var procs = Process.GetProcessesByName("etodpx");
             if (procs.Length == 0) return true;
 
             string dir = Path.GetDirectoryName(
                 System.Reflection.Assembly.GetExecutingAssembly().Location);
-            string expected = Path.GetFullPath(Path.Combine(dir, "dpetoos.exe"));
+            string expected = Path.GetFullPath(Path.Combine(dir, "etodpx.exe"));
             var matching = new List<Process>();
             foreach (var p in procs)
             {
@@ -626,9 +626,9 @@ namespace Dpetoos.Tune
             }
             if (matching.Count == 0) return true;
 
-            _dpetoosWasRunning = true;
+            _etodpxWasRunning = true;
 
-            WL("  Calisan dpetoos bulundu - olcum icin durduruluyor.");
+            WL("  Calisan etodpx bulundu - olcum icin durduruluyor.");
             foreach (var p in matching)
             {
                 try
@@ -643,8 +643,8 @@ namespace Dpetoos.Tune
                 }
                 catch (Exception ex)
                 {
-                    WL("  dpetoos durdurulamadi: " + ex.Message);
-                    WL("  Once dpetoos'u elle kapat, sonra tekrar dene.");
+                    WL("  etodpx durdurulamadi: " + ex.Message);
+                    WL("  Once etodpx'i elle kapat, sonra tekrar dene.");
                     Pause();
                     return false;
                 }
@@ -657,22 +657,22 @@ namespace Dpetoos.Tune
 
         private static int Finish(int code)
         {
-            RestartDpetoosIfNeeded();
+            RestartEtodpxIfNeeded();
             return code;
         }
 
-        private static void RestartDpetoosIfNeeded()
+        private static void RestartEtodpxIfNeeded()
         {
-            if (!_dpetoosWasRunning) return;
-            _dpetoosWasRunning = false;
+            if (!_etodpxWasRunning) return;
+            _etodpxWasRunning = false;
             try
             {
                 string dir = Path.GetDirectoryName(
                     System.Reflection.Assembly.GetExecutingAssembly().Location);
-                string exe = Path.Combine(dir, "dpetoos.exe");
+                string exe = Path.Combine(dir, "etodpx.exe");
                 if (!File.Exists(exe))
                 {
-                    WL("  UYARI: dpetoos.exe bulunamadigi icin yeniden baslatilamadi.");
+                    WL("  UYARI: etodpx.exe bulunamadigi icin yeniden baslatilamadi.");
                     return;
                 }
                 Process.Start(new ProcessStartInfo
@@ -681,11 +681,11 @@ namespace Dpetoos.Tune
                     WorkingDirectory = dir,
                     UseShellExecute = true
                 });
-                WL("  dpetoos yeniden baslatildi.");
+                WL("  etodpx yeniden baslatildi.");
             }
             catch (Exception ex)
             {
-                WL("  UYARI: dpetoos yeniden baslatilamadi: " + ex.Message);
+                WL("  UYARI: etodpx yeniden baslatilamadi: " + ex.Message);
             }
         }
 
@@ -693,7 +693,7 @@ namespace Dpetoos.Tune
         {
             string dir = Path.GetDirectoryName(
                 System.Reflection.Assembly.GetExecutingAssembly().Location);
-            string path = Path.Combine(dir, "dpetoos.conf");
+            string path = Path.Combine(dir, "etodpx.conf");
 
             var keep = new List<string>();
             var drop = new[] { "tls", "http", "split_pos", "fake_badsum",
@@ -715,7 +715,7 @@ namespace Dpetoos.Tune
             }
 
             keep.Add("");
-            keep.Add("# --- dpetoos-tune tarafindan bulundu: " + best.Name);
+            keep.Add("# --- etodpx-tune tarafindan bulundu: " + best.Name);
             keep.Add("# --- " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
             foreach (var l in best.ConfLines().Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
                 keep.Add(l);
@@ -740,7 +740,7 @@ namespace Dpetoos.Tune
             {
                 string dir = Path.GetDirectoryName(
                     System.Reflection.Assembly.GetExecutingAssembly().Location);
-                File.WriteAllText(Path.Combine(dir, "dpetoos-tune.log"),
+                File.WriteAllText(Path.Combine(dir, "etodpx-tune.log"),
                                   _log.ToString(), new UTF8Encoding(false));
             }
             catch { }

@@ -1,9 +1,9 @@
-﻿// dpetoos - TLS ClientHello (SNI) ve HTTP Host konumlandirma
+﻿// etodpx - TLS ClientHello (SNI) ve HTTP Host konumlandirma
 // Amac: payload icinde alan adinin TAM konumunu bulmak, boylece TCP'yi
 // tam alan adinin ortasindan bolebilelim. DPI icin en zor durum budur.
 using System;
 
-namespace Dpetoos.Engine
+namespace Etodpx.Engine
 {
     internal struct HostLocation
     {

@@ -1,14 +1,14 @@
-﻿// dpetoos - bildirim alani simgesi. Pencere kapatilmadan arka planda calisabilsin diye.
+﻿// etodpx - bildirim alani simgesi. Pencere kapatilmadan arka planda calisabilsin diye.
 using System;
 using System.Drawing;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Forms;
-using Dpetoos.Engine;
+using Etodpx.Engine;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 
-namespace Dpetoos.Ui
+namespace Etodpx.Ui
 {
     internal sealed class TrayIcon : IDisposable
     {
@@ -40,7 +40,7 @@ namespace Dpetoos.Ui
             {
                 Icon = LoadIcon(),
                 Visible = true,
-                Text = "dpetoos",
+                Text = "etodpx",
                 ContextMenuStrip = menu
             };
             // Tek tik da acsin - cogu kisi tepsi simgesine cift tiklamiyor.
@@ -100,7 +100,7 @@ namespace Dpetoos.Ui
             try
             {
                 _icon.BalloonTipIcon = ToolTipIcon.Warning;
-                _icon.BalloonTipTitle = "dpetoos - koruma durdu";
+                _icon.BalloonTipTitle = "etodpx - koruma durdu";
                 _icon.BalloonTipText = message.Length > 200 ? message.Substring(0, 200) : message;
                 _icon.ShowBalloonTip(10000);
                 _lastRunning = false;
@@ -115,7 +115,7 @@ namespace Dpetoos.Ui
             if (run == _lastRunning && _synced) return;
             _lastRunning = run;
             _synced = true;
-            _icon.Text = run ? "dpetoos - koruma açık" : "dpetoos - kapalı";
+            _icon.Text = run ? "etodpx - koruma açık" : "etodpx - kapalı";
         }
 
         public void Dispose()

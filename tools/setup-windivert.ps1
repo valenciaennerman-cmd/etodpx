@@ -1,4 +1,4 @@
-# dpetoos - WinDivert surucusunu indirip bin klasorune yerlestirir.
+# etodpx - WinDivert surucusunu indirip bin klasorune yerlestirir.
 #
 # WinDivert, GoodbyeDPI ve zapret dahil butun bu tur araclarin kullandigi
 # acik kaynakli paket yakalama surucusudur (LGPLv3 / GPLv2).
@@ -14,7 +14,7 @@ $ExpectedSysSha256 = '8DA085332782708D8767BCACE5327A6EC7283C17CFB85E40B03CD2323A
 
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Bin  = Join-Path $Root 'bin'
-$Tmp  = Join-Path $env:TEMP ("dpetoos-windivert-" + [guid]::NewGuid().ToString('N'))
+$Tmp  = Join-Path $env:TEMP ("etodpx-windivert-" + [guid]::NewGuid().ToString('N'))
 
 Write-Host ''
 Write-Host '  WinDivert kurulumu' -ForegroundColor Cyan

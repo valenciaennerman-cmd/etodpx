@@ -1,13 +1,13 @@
-# dpetoos - uygulama simgesi ureteci
+# etodpx - uygulama simgesi ureteci
 #
 # Bagimliligi yoktur: PNG ve ICO kodlamasi elle yapilir, cizim 4x supersampling
 # ile yumusatilir. Boylece Windows'ta ek bir sey kurmadan calisir.
 #
 # Kullanim:
-#   python make_icon.py                 -> secili stille assets/dpetoos.ico
+#   python make_icon.py                 -> secili stille assets/etodpx.ico
 #   python make_icon.py --style B       -> B stiliyle uret
 #   python make_icon.py --preview 256   -> her stil icin tek tek PNG onizleme
-#   python make_icon.py --all           -> assets/dpetoos-A.ico ... dpetoos-F.ico
+#   python make_icon.py --all           -> assets/etodpx-A.ico ... etodpx-F.ico
 #   python make_icon.py --list          -> stilleri listele
 import math
 import os
@@ -283,7 +283,7 @@ def main():
         os.makedirs(assets, exist_ok=True)
         print('butun stiller uretiliyor (Explorer icinde "Buyuk simgeler" ile bak):')
         for k in sorted(STYLES):
-            dest = os.path.abspath(os.path.join(assets, 'dpetoos-%s.ico' % k))
+            dest = os.path.abspath(os.path.join(assets, 'etodpx-%s.ico' % k))
             print('  %s : %s' % (k, STYLES[k]))
             sys.stdout.write('     ')
             build_ico(dest, k)
@@ -306,7 +306,7 @@ def main():
         return 1
 
     os.makedirs(assets, exist_ok=True)
-    dest = os.path.abspath(os.path.join(assets, 'dpetoos.ico'))
+    dest = os.path.abspath(os.path.join(assets, 'etodpx.ico'))
     print('simge uretiliyor (stil %s: %s)' % (style, STYLES[style]))
     n = build_ico(dest, style)
     print('yazildi: %s (%d bayt)' % (dest, n))

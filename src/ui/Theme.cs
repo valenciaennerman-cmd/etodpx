@@ -1,8 +1,8 @@
-﻿// dpetoos - renk paleti
+﻿// etodpx - renk paleti
 // Tek tema var: karanlik. Aydinlik mod bilerek kaldirildi.
 using System.Windows.Media;
 
-namespace Dpetoos.Ui
+namespace Etodpx.Ui
 {
     internal static class Palette
     {

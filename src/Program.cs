@@ -1,4 +1,4 @@
-﻿// dpetoos - giris noktasi
+﻿// etodpx - giris noktasi
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -8,14 +8,14 @@ using System.Security.Principal;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
-using Dpetoos.Engine;
-using Dpetoos.Ui;
+using Etodpx.Engine;
+using Etodpx.Ui;
 
-namespace Dpetoos
+namespace Etodpx
 {
     internal static class Program
     {
-        private const string MutexName = @"Global\dpetoos-single-instance";
+        private const string MutexName = @"Global\etodpx-single-instance";
 
         [STAThread]
         private static int Main(string[] args)
@@ -25,7 +25,7 @@ namespace Dpetoos
             {
                 if (!createdNew)
                 {
-                    MessageBox.Show("dpetoos zaten çalışıyor.", "dpetoos",
+                    MessageBox.Show("etodpx zaten çalışıyor.", "etodpx",
                         MessageBoxButton.OK, MessageBoxImage.Information);
                     return 0;
                 }
@@ -33,14 +33,14 @@ namespace Dpetoos
                 if (!IsAdministrator())
                 {
                     MessageBox.Show(
-                        "dpetoos yönetici izniyle çalışmalı.\n\n" +
+                        "etodpx yönetici izniyle çalışmalı.\n\n" +
                         "Ağ sürücüsü (WinDivert) yalnızca yönetici olarak yüklenebilir.",
-                        "dpetoos", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        "etodpx", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return 1;
                 }
 
                 string dir = AppDir();
-                var cfg = Config.Load(Path.Combine(dir, "dpetoos.conf"));
+                var cfg = Config.Load(Path.Combine(dir, "etodpx.conf"));
 
                 TuneProcess(cfg);
 
@@ -51,7 +51,7 @@ namespace Dpetoos
                 {
                     e.Handled = true;
                     MessageBox.Show("Beklenmeyen hata:\n\n" + e.Exception.Message,
-                        "dpetoos", MessageBoxButton.OK, MessageBoxImage.Error);
+                        "etodpx", MessageBoxButton.OK, MessageBoxImage.Error);
                 };
 
                 var win = new MainWindow(cfg, engine);

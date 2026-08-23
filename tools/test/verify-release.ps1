@@ -1,4 +1,4 @@
-# dpetoos - yayin oncesi denetim
+# etodpx - yayin oncesi denetim
 #
 # Depoyu GitHub'a atmadan once calistir. Yaptigi sey su: git'in gercekten
 # takip edecegi dosyalari BOS bir klasore kopyalar ve orada sifirdan derler.
@@ -37,7 +37,7 @@ $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $Root
 
 Write-Host ''
-Write-Host '  dpetoos yayin denetimi'
+Write-Host '  etodpx yayin denetimi'
 Write-Host '  ===================='
 Write-Host "  depo: $Root"
 
@@ -53,14 +53,14 @@ T '.gitignore var' { if (Test-Path '.gitignore') { $true } else { @('HATA', 'yok
 T 'LICENSE var' { if (Test-Path 'LICENSE') { @('ok', (Get-Content LICENSE -TotalCount 1)) } else { @('HATA', 'yok') } }
 T 'README var' { if (Test-Path 'README.md') { @('ok', "$([math]::Round((Get-Item README.md).Length/1KB,1)) KB") } else { @('HATA', 'yok') } }
 T 'uygulama simgesi depoda' {
-    if (Test-Path 'assets\dpetoos.ico') { @('ok', "$([math]::Round((Get-Item assets\dpetoos.ico).Length/1KB,1)) KB") }
-    else { @('HATA', 'assets\dpetoos.ico yok - yeni klonda simge olmaz') }
+    if (Test-Path 'assets\etodpx.ico') { @('ok', "$([math]::Round((Get-Item assets\etodpx.ico).Length/1KB,1)) KB") }
+    else { @('HATA', 'assets\etodpx.ico yok - yeni klonda simge olmaz') }
 }
 
 # git'in takip edecegi dosya listesini cikar (gecici depo, mevcut .git'e dokunmaz)
 $tracked = @()
 if ($hasGit) {
-    $tmpGit = Join-Path ([IO.Path]::GetTempPath()) ("dpetoos-verify-" + [guid]::NewGuid().ToString('N'))
+    $tmpGit = Join-Path ([IO.Path]::GetTempPath()) ("etodpx-verify-" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $tmpGit | Out-Null
     try {
         git --git-dir="$tmpGit\.git" --work-tree="$Root" init -q 2>$null | Out-Null
@@ -121,7 +121,7 @@ T 'kaynak dosyalari UTF-8 BOM ile' {
 # ============================================ B. sifirdan klon derlemesi
 Section 'B. sifirdan klon derlemesi (yeni kullanicinin gordugu)'
 
-$clone = Join-Path ([IO.Path]::GetTempPath()) ("dpetoos-clone-" + [guid]::NewGuid().ToString('N'))
+$clone = Join-Path ([IO.Path]::GetTempPath()) ("etodpx-clone-" + [guid]::NewGuid().ToString('N'))
 $script:cloneOk = $false
 
 T 'temiz kopya olusturuldu' {
@@ -154,12 +154,12 @@ T 'build.cmd temiz kopyada calisiyor' {
         @('ok', 'derlendi')
     } finally { Pop-Location }
 }
-T 'dpetoos.exe uretildi' {
-    $p = Join-Path $clone 'bin\dpetoos.exe'
+T 'etodpx.exe uretildi' {
+    $p = Join-Path $clone 'bin\etodpx.exe'
     if (Test-Path $p) { @('ok', "$([math]::Round((Get-Item $p).Length/1KB)) KB") } else { @('HATA', 'yok') }
 }
 T 'simge exe icine gomuldu' {
-    $p = Join-Path $clone 'bin\dpetoos.exe'
+    $p = Join-Path $clone 'bin\etodpx.exe'
     if (-not (Test-Path $p)) { return @('HATA', 'exe yok') }
     Add-Type -AssemblyName System.Drawing
     try { $i = [Drawing.Icon]::ExtractAssociatedIcon($p); if ($i) { @('ok', 'var') } else { @('HATA', 'yok') } }
@@ -169,7 +169,7 @@ T 'ayarlayici temiz kopyada derleniyor' {
     Push-Location $clone
     try {
         cmd /c "tools\tune\build-tune.cmd" 2>&1 | Out-Null
-        if (Test-Path 'bin\dpetoos-tune.exe') { @('ok', 'derlendi') } else { @('HATA', 'derlenemedi') }
+        if (Test-Path 'bin\etodpx-tune.exe') { @('ok', 'derlendi') } else { @('HATA', 'derlenemedi') }
     } finally { Pop-Location }
 }
 T 'oz test temiz kopyada gecti' {

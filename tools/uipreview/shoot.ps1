@@ -1,4 +1,4 @@
-# dpetoos - arayuzu derler, acar ve pencerenin ekran goruntusunu alir.
+# etodpx - arayuzu derler, acar ve pencerenin ekran goruntusunu alir.
 # Gelistirme araci; yonetici gerektirmez, motoru baslatmaz.
 param(
     [string]$State = 'off',
@@ -8,9 +8,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Bin  = Join-Path $Root 'bin'
-$Exe  = Join-Path $Bin 'dpetoos-uipreview.exe'
+$Exe  = Join-Path $Bin 'etodpx-uipreview.exe'
 
-if (-not $Out) { $Out = Join-Path $env:TEMP ("dpetoos-ui-$State.png") }
+if (-not $Out) { $Out = Join-Path $env:TEMP ("etodpx-ui-$State.png") }
 
 $fw  = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319"
 $wpf = Join-Path $fw 'WPF'
@@ -21,7 +21,7 @@ if (-not (Test-Path $Exe) -or
 
     & "$fw\csc.exe" /nologo /target:winexe /platform:x64 /unsafe+ /optimize+ /debug- `
         /warn:3 /nowarn:1701,1702 `
-        /out:$Exe /main:Dpetoos.Preview.UiPreview `
+        /out:$Exe /main:Etodpx.Preview.UiPreview `
         /r:"$fw\System.Xaml.dll" `
         /r:"$wpf\WindowsBase.dll" /r:"$wpf\PresentationCore.dll" /r:"$wpf\PresentationFramework.dll" `
         "$Root\src\*.cs" "$Root\src\engine\*.cs" "$Root\src\ui\*.cs" `

@@ -1,18 +1,18 @@
-﻿// dpetoos - arayuz onizlemesi (gelistirme araci)
+﻿// etodpx - arayuz onizlemesi (gelistirme araci)
 // Motoru baslatmadan pencereyi acar; boylece tasarim yonetici izni ve surucu
 // olmadan gozden gecirilebilir. Uretim kodunda bu araca ozel hicbir sey yok:
 // "acik" gorunumu yansima (reflection) ile kurulur.
 //
-// Kullanim: dpetoos-uipreview.exe [on|off]
+// Kullanim: etodpx-uipreview.exe [on|off]
 using System;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
-using Dpetoos;
-using Dpetoos.Engine;
-using Dpetoos.Ui;
+using Etodpx;
+using Etodpx.Engine;
+using Etodpx.Ui;
 
-namespace Dpetoos.Preview
+namespace Etodpx.Preview
 {
     internal static class UiPreview
     {

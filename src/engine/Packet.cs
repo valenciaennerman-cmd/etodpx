@@ -1,9 +1,9 @@
-﻿// dpetoos - ham paket ayristirma / kurma yardimcilari
+﻿// etodpx - ham paket ayristirma / kurma yardimcilari
 // Hicbir fonksiyon allocation yapmaz; hepsi pointer uzerinde calisir.
 using System;
 using System.Runtime.CompilerServices;
 
-namespace Dpetoos.Engine
+namespace Etodpx.Engine
 {
     /// <summary>Bir paketin cozumlenmis gorunumu (offset'ler paket basina gore).</summary>
     internal unsafe struct PacketView

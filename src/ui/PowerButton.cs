@@ -1,4 +1,4 @@
-﻿// dpetoos - ortadaki buyuk baslat/durdur dugmesi
+﻿// etodpx - ortadaki buyuk baslat/durdur dugmesi
 //
 // Surekli donen animasyonlar hakkinda:
 // WPF bir animasyon calisirken ekranin yenileme hizinda kare uretir. 240 Hz
@@ -25,7 +25,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 
-namespace Dpetoos.Ui
+namespace Etodpx.Ui
 {
     internal sealed class PowerButton : Grid
     {

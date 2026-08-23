@@ -1,9 +1,9 @@
 @echo off
-rem dpetoos - tek tikla: gerekirse derle, WinDivert eksikse kur, sonra calistir.
+rem etodpx - tek tikla: gerekirse derle, WinDivert eksikse kur, sonra calistir.
 setlocal
 cd /d "%~dp0"
 
-if not exist "bin\dpetoos.exe" (
+if not exist "bin\etodpx.exe" (
   call "build.cmd" || exit /b 1
 )
 
@@ -13,5 +13,5 @@ if not exist "bin\WinDivert.dll" (
   if errorlevel 1 exit /b 1
 )
 
-start "" "bin\dpetoos.exe"
+start "" "bin\etodpx.exe"
 endlocal

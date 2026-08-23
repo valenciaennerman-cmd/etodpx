@@ -1,11 +1,11 @@
-﻿// dpetoos - desync stratejileri (sicak yol)
+﻿// etodpx - desync stratejileri (sicak yol)
 // Bu sinifin her ornegi tek bir is parcacigina aittir. Calisma aninda tahsis
 // yapmaz: tum tamponlar acilista unmanaged bellekten alinir, boylece GC
 // duraklamalari paket isleme gecikmesine karismaz.
 using System;
 using System.Runtime.InteropServices;
 
-namespace Dpetoos.Engine
+namespace Etodpx.Engine
 {
     internal sealed unsafe class DesyncWorker : IDisposable
     {

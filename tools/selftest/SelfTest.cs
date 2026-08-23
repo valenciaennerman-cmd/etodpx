@@ -1,4 +1,4 @@
-﻿// dpetoos - oz test
+﻿// etodpx - oz test
 // Motorun UI olmadan dogrulanabilir parcalarini sinar. Yonetici gerektirmez;
 // yalnizca WinDivert.dll yaninda olmali (filtre derleyicisi icin).
 //
@@ -7,10 +7,10 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using Dpetoos;
-using Dpetoos.Engine;
+using Etodpx;
+using Etodpx.Engine;
 
-namespace Dpetoos.Test
+namespace Etodpx.Test
 {
     internal static unsafe class SelfTest
     {
@@ -33,8 +33,8 @@ namespace Dpetoos.Test
         {
             Console.OutputEncoding = Encoding.UTF8;
             Console.WriteLine();
-            Console.WriteLine("dpetoos oz test");
-            Console.WriteLine("===============");
+            Console.WriteLine("etodpx oz test");
+            Console.WriteLine("==============");
 
             TestInterop();
             TestConfig();

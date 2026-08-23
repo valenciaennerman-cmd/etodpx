@@ -1,8 +1,8 @@
-﻿// dpetoos - sayaclar. Sicak yolda sadece Interlocked.Increment var.
+﻿// etodpx - sayaclar. Sicak yolda sadece Interlocked.Increment var.
 using System;
 using System.Threading;
 
-namespace Dpetoos.Engine
+namespace Etodpx.Engine
 {
     internal sealed class Stats
     {

@@ -1,4 +1,4 @@
-# dpetoos - kaynaktaki kullanici metinlerini duzgun Turkceye cevirir
+# etodpx - kaynaktaki kullanici metinlerini duzgun Turkceye cevirir
 # ve butun .cs dosyalarini UTF-8 BOM ile kaydeder (csc.exe BOM'u algilar).
 import io
 import os
@@ -32,8 +32,8 @@ PHRASES = [
      u'"WinDivert.dll mimarisi uyumsuz. 64 bit sürüm gerekli."'),
     ('"WinDivert surucu dosyasi (WinDivert64.sys) bulunamadi.\\n" +\n                           "DLL ile .sys dosyasi ayni klasorde olmali."',
      u'"WinDivert sürücü dosyası (WinDivert64.sys) bulunamadı.\\n" +\n                           "DLL ile .sys dosyası aynı klasörde olmalı."'),
-    ('"Yonetici izni gerekiyor. dpetoos yonetici olarak calistirilmali."',
-     u'"Yönetici izni gerekiyor. dpetoos yönetici olarak çalıştırılmalı."'),
+    ('"Yonetici izni gerekiyor. etodpx yonetici olarak calistirilmali."',
+     u'"Yönetici izni gerekiyor. etodpx yönetici olarak çalıştırılmalı."'),
     ('"Filtre ifadesi surucu tarafindan reddedildi (WinDivert 2.2+ gerekir)."',
      u'"Filtre ifadesi sürücü tarafından reddedildi (WinDivert 2.2+ gerekir)."'),
     ('"WinDivert surucusunun imzasi Windows tarafindan kabul edilmedi.\\n" +\n                           "Resmi WinDivert 2.2.2 paketini kullanin."',

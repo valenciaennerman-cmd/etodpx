@@ -15,17 +15,17 @@ WinDivert.lib
 # Gunlukler ---------------------------------------------------------------
 # DIKKAT: bu dosyalar hangi siteleri test ettigini icerir. Depoya konmamali.
 *.log
-dpetoos-tune.log
-dpetoos-test.log
+etodpx-tune.log
+etodpx-test.log
 
 # Kullaniciya ozel ayar ---------------------------------------------------
-# Depodaki sablon kok dizindeki dpetoos.conf; bin/dpetoos.conf kisiye ozeldir
-# (dpetoos-tune.exe hatta gore yazar).
-bin/dpetoos.conf
+# Depodaki sablon kok dizindeki etodpx.conf; bin/etodpx.conf kisiye ozeldir
+# (etodpx-tune.exe hatta gore yazar).
+bin/etodpx.conf
 
-# Uretilen simge onizlemeleri (assets/dpetoos.ico DEPOYA GIRER) --------------
+# Uretilen simge onizlemeleri (assets/etodpx.ico DEPOYA GIRER) --------------
 assets/preview-*.png
-assets/dpetoos-?.ico
+assets/etodpx-?.ico
 
 # Isletim sistemi / editor ------------------------------------------------
 Thumbs.db

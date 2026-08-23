@@ -1,9 +1,9 @@
-# dpetoos - kapsamli test paketi
+# etodpx - kapsamli test paketi
 #
 # 67 kontrol: motor sagligi, gecikme ve paket kaybi, TLS el sikismalari,
 # Discord uclari, yan hasar (yerel ag / 443 disi portlar / UDP) ve kararlilik.
 #
-# Yonetici gerekmez. dpetoos ACIK iken calistir.
+# Yonetici gerekmez. etodpx ACIK iken calistir.
 #   powershell -ExecutionPolicy Bypass -File tools\test\run-tests.ps1
 param([switch]$Quick)
 
@@ -99,19 +99,19 @@ function PingStats([string]$target, [int]$count, [int]$size = 32, [switch]$DF) {
 $pingCount = if ($Quick) { 8 } else { 20 }
 
 Out2 ''
-Out2 '  dpetoos test paketi'
+Out2 '  etodpx test paketi'
 Out2 '  ================='
 Out2 ("  tarih : " + (Get-Date -Format 'yyyy-MM-dd HH:mm'))
 
 # =========================================================== A. motor sagligi
 Section 'A. motor ve surucu'
 
-$dpetoos = Get-Process dpetoos -ErrorAction SilentlyContinue
+$etodpx = Get-Process etodpx -ErrorAction SilentlyContinue
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $bin = Join-Path $root 'bin'
 
-T 'dpetoos sureci calisiyor' {
-    if ($dpetoos) { @('ok', "PID $($dpetoos.Id)") } else { @('HATA', 'dpetoos acik degil - once baslat') }
+T 'etodpx sureci calisiyor' {
+    if ($etodpx) { @('ok', "PID $($etodpx.Id)") } else { @('HATA', 'etodpx acik degil - once baslat') }
 }
 T 'WinDivert servisi yuklu' {
     if (sc.exe query WinDivert 2>$null | Select-String 'RUNNING') { @('ok', 'RUNNING') }
@@ -122,25 +122,25 @@ T 'WinDivert dosyalari yerinde' {
     $b = Test-Path (Join-Path $bin 'WinDivert64.sys')
     if ($a -and $b) { @('ok', 'dll + sys') } else { @('HATA', "dll=$a sys=$b") }
 }
-T 'dpetoos.conf okunabiliyor' {
-    $p = Join-Path $bin 'dpetoos.conf'
+T 'etodpx.conf okunabiliyor' {
+    $p = Join-Path $bin 'etodpx.conf'
     if (-not (Test-Path $p)) { return @('HATA', 'dosya yok') }
     $ttl = (Select-String -Path $p -Pattern '^\s*fake_ttl_value\s*=\s*(\d+)' | Select-Object -Last 1).Matches.Groups[1].Value
     $sp = (Select-String -Path $p -Pattern '^\s*split_pos\s*=\s*(\S+)' | Select-Object -Last 1).Matches.Groups[1].Value
     @('ok', "split_pos=$sp ttl=$ttl")
 }
-T 'dpetoos bellek kullanimi makul' {
-    if (-not $dpetoos) { return @('HATA', 'surec yok') }
-    $mb = [math]::Round($dpetoos.WorkingSet64 / 1MB)
+T 'etodpx bellek kullanimi makul' {
+    if (-not $etodpx) { return @('HATA', 'surec yok') }
+    $mb = [math]::Round($etodpx.WorkingSet64 / 1MB)
     if ($mb -lt 250) { @('ok', "$mb MB") } else { @('uyari', "$mb MB - yuksek") }
 }
-T 'dpetoos is parcacigi sayisi makul' {
-    if (-not $dpetoos) { return @('HATA', 'surec yok') }
-    $t = $dpetoos.Threads.Count
+T 'etodpx is parcacigi sayisi makul' {
+    if (-not $etodpx) { return @('HATA', 'surec yok') }
+    $t = $etodpx.Threads.Count
     if ($t -lt 40) { @('ok', "$t thread") } else { @('uyari', "$t thread") }
 }
 
-$cpuBefore = if ($dpetoos) { $dpetoos.TotalProcessorTime.TotalSeconds } else { 0 }
+$cpuBefore = if ($etodpx) { $etodpx.TotalProcessorTime.TotalSeconds } else { 0 }
 $testStart = Get-Date
 
 # ================================================= B. gecikme ve paket kaybi
@@ -391,14 +391,14 @@ T 'esZamanli 10 baglanti' {
     $ok = @($res | Where-Object { $_ -eq $true }).Count
     if ($ok -ge 9) { @('ok', "$ok/10") } elseif ($ok -ge 7) { @('uyari', "$ok/10") } else { @('HATA', "$ok/10") }
 }
-T 'testler sonrasi dpetoos hala calisiyor' {
-    if (Get-Process dpetoos -ErrorAction SilentlyContinue) { @('ok', 'ayakta') } else { @('HATA', 'surec olmus') }
+T 'testler sonrasi etodpx hala calisiyor' {
+    if (Get-Process etodpx -ErrorAction SilentlyContinue) { @('ok', 'ayakta') } else { @('HATA', 'surec olmus') }
 }
 T 'testler sonrasi surucu hala yuklu' {
     if (sc.exe query WinDivert 2>$null | Select-String 'RUNNING') { @('ok', 'RUNNING') } else { @('HATA', 'servis dustu') }
 }
-T 'dpetoos CPU tuketimi dusuk kaldi' {
-    $d2 = Get-Process dpetoos -ErrorAction SilentlyContinue
+T 'etodpx CPU tuketimi dusuk kaldi' {
+    $d2 = Get-Process etodpx -ErrorAction SilentlyContinue
     if (-not $d2) { return @('HATA', 'surec yok') }
     $used = $d2.TotalProcessorTime.TotalSeconds - $cpuBefore
     $wall = ((Get-Date) - $testStart).TotalSeconds
@@ -424,7 +424,7 @@ if ($script:fail -eq 0) {
 }
 Out2 ''
 
-$logPath = Join-Path $bin 'dpetoos-test.log'
+$logPath = Join-Path $bin 'etodpx-test.log'
 try {
     [IO.File]::WriteAllText($logPath, $script:log.ToString(), (New-Object Text.UTF8Encoding($false)))
     Out2 "  gunluk: $logPath"

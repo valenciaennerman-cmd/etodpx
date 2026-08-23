@@ -1,4 +1,4 @@
-﻿// dpetoos - motor: filtre kurulumu, tutamaklar, is parcaciklari
+﻿// etodpx - motor: filtre kurulumu, tutamaklar, is parcaciklari
 //
 // Tasarimin ozu: cekirdek filtresini olabildigince DAR tutmak.
 // Yalnizca yeni bir baglantinin ILK paketi (TLS ClientHello / HTTP istek satiri /
@@ -12,7 +12,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
-namespace Dpetoos.Engine
+namespace Etodpx.Engine
 {
     internal sealed unsafe class DpiEngine : IDisposable
     {
@@ -213,7 +213,7 @@ namespace Dpetoos.Engine
                     return "WinDivert sürücü dosyası (WinDivert64.sys) bulunamadı.\n" +
                            "DLL ile .sys dosyası aynı klasörde olmalı.";
                 case ErrorAccessDenied:
-                    return "Yönetici izni gerekiyor. dpetoos yönetici olarak çalıştırılmalı.";
+                    return "Yönetici izni gerekiyor. etodpx yönetici olarak çalıştırılmalı.";
                 case ErrorInvalidParameter:
                     return "Filtre ifadesi sürücü tarafından reddedildi (WinDivert 2.2+ gerekir).";
                 case ErrorInvalidImageHash:
@@ -236,7 +236,7 @@ namespace Dpetoos.Engine
         {
             var t = new Thread(() => WorkerLoop(handle, quic, seed, generation));
             t.IsBackground = true;
-            t.Name = quic ? "dpetoos-quic" : "dpetoos-tcp-" + seed;
+            t.Name = quic ? "etodpx-quic" : "etodpx-tcp-" + seed;
             try { t.Priority = ThreadPriority.Highest; } catch { }
             _threads.Add(t);
             try { t.Start(); }
@@ -345,7 +345,7 @@ namespace Dpetoos.Engine
             {
                 string dir = Path.GetDirectoryName(
                     System.Reflection.Assembly.GetExecutingAssembly().Location);
-                string path = Path.Combine(dir, "dpetoos-fault.log");
+                string path = Path.Combine(dir, "etodpx-fault.log");
                 File.AppendAllText(path,
                     DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + Environment.NewLine,
                     new UTF8Encoding(false));

@@ -25,11 +25,11 @@ SOFTWARE.
 Third-party notice
 ------------------
 
-dpetoos does not include WinDivert. The setup script (tools/setup-windivert.cmd)
+etodpx does not include WinDivert. The setup script (tools/setup-windivert.cmd)
 downloads it at install time from the official release page:
 
     https://github.com/basil00/WinDivert
 
 WinDivert is a separate project by Basil Fierz and contributors, dual-licensed
-under LGPLv3 and GPLv2. dpetoos only calls its public API through the shipped
+under LGPLv3 and GPLv2. etodpx only calls its public API through the shipped
 DLL; no WinDivert source or binary is redistributed in this repository.

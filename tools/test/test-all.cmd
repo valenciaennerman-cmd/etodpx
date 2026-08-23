@@ -1,9 +1,9 @@
 @echo off
-rem dpetoos - butun testler. GitHub'a push etmeden once bunu calistir.
+rem etodpx - butun testler. GitHub'a push etmeden once bunu calistir.
 rem
 rem   1) Oz test            (79 kontrol, yonetici gerekmez)
 rem   2) Yayin denetimi     (22 kontrol, sifirdan klon derlemesi)
-rem   3) Ag test paketi     (67 kontrol, dpetoos ACIK olmali)
+rem   3) Ag test paketi     (67 kontrol, etodpx ACIK olmali)
 setlocal
 cd /d "%~dp0..\.."
 
@@ -27,11 +27,11 @@ echo.
 echo ================================================================
 echo   3/3  AG TEST PAKETI  -  gercek baglantilar
 echo ================================================================
-tasklist /FI "IMAGENAME eq dpetoos.exe" 2>nul | find /I "dpetoos.exe" >nul
+tasklist /FI "IMAGENAME eq etodpx.exe" 2>nul | find /I "etodpx.exe" >nul
 if errorlevel 1 (
   echo.
-  echo   ATLANDI: dpetoos calismiyor.
-  echo   Once dpetoos.cmd ile baslat, sonra bu testi tekrar calistir.
+  echo   ATLANDI: etodpx calismiyor.
+  echo   Once etodpx.cmd ile baslat, sonra bu testi tekrar calistir.
   echo.
 ) else (
   powershell -NoProfile -ExecutionPolicy Bypass -File "tools\test\run-tests.ps1"

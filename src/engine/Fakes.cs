@@ -1,4 +1,4 @@
-﻿// dpetoos - sahte (decoy) yuk uretimi
+﻿// etodpx - sahte (decoy) yuk uretimi
 // Sahte paketler DPI'in gordugu ilk paket olur; gercek sunucuya asla ulasmaz
 // (bozuk checksum) ya da yolda oler (dusuk TTL). Icerik zararsiz bir alan adi
 // tasir, boylece yanlislikla ulasirsa bile kimseyi rahatsiz etmez.
@@ -6,7 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Dpetoos.Engine
+namespace Etodpx.Engine
 {
     internal static class Fakes
     {
