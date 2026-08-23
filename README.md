@@ -46,12 +46,37 @@ Bu araç **tahmin etmez, ölçer.** Önce engelin cinsini bulur:
 | `IP seviyesinde engel` | dpetoos bunu aşamaz, VPN gerekir |
 | `alan adi cozulemiyor` | Yazım hatası |
 
-Sonra dpetoos'yu yeniden başlat.
+Sonra dpetoos'u yeniden başlat.
 
 > **Önemli:** Depodaki `fake_ttl_value = 4` yalnızca örnek başlangıç değeridir.
 > Sahte TCP paketi varsayılan olarak kapalıdır; bu değer ancak `fake_ttl = true`
 > yapıldığında kullanılır. Doğru değer operatöre ve hatta göre değişir — onu
 > güvenle bulan araç `dpetoos-tune.exe`'dir.
+
+### Ayarı başka cihaza taşıma — çalışmaz
+
+`bin\dpetoos.conf` dosyasını kopyalayıp başka bir makinede kullanmak **işe
+yaramaz**, aynı evdeki başka bir bilgisayarda bile. Sebebi `fake_ttl_value`:
+bu sayı, sahte paketin DPI kutusuna ulaşması için kaç hop yaşayacağını söyler
+ve makineden makineye değişir.
+
+En sık karşılaşılan hali: **sanal makine.** NAT arkasındaki bir VM'de trafik
+önce sanal ağ geçidine gider, yani ana makineye göre **bir hop fazladır**. Ana
+makinede DPI 4. hop'taysa VM'de 5. hop'tadır; `fake_ttl_value = 4` ile sahte
+paket DPI'a hiç ulaşmaz ve hiçbir şey atlatılmaz. Uygulama "KORUMA AÇIK" der
+ama site açılmaz.
+
+Wi-Fi ile kablolu bağlantı arasında geçmek, modem değiştirmek, farklı ISS —
+hepsi aynı sonucu verir.
+
+**Doğrusu:** her yeni cihazda bir kez ayarlayıcıyı çalıştır.
+
+```bat
+bin\dpetoos-tune.exe discord.com
+```
+
+Klasörü paylaşırken `bin\dpetoos.conf` dosyasını **hiç koyma** — uygulama ilk
+açılışta güvenli şablondan kendisi üretir.
 
 ### DNS ne zaman gerekir?
 
@@ -177,7 +202,7 @@ atlatma çalışmaya devam eder.
 ## Ayarlar
 
 Arayüzde ayar yok; hepsi `bin\dpetoos.conf` içinde. Değiştirdikten sonra
-dpetoos'yu yeniden başlat.
+dpetoos'u yeniden başlat.
 
 | Anahtar | Varsayılan | Ne yapar |
 |---|---|---|
@@ -211,7 +236,7 @@ Araç önce engelin cinsini teşhis eder:
 
 | Teşhis | Anlamı |
 |---|---|
-| `alan adi cozulemiyor` | Yazım hatası ya da DNS engeli — dpetoos'nun konusu değil |
+| `alan adi cozulemiyor` | Yazım hatası ya da DNS engeli — dpetoos'un konusu değil |
 | `IP seviyesinde engel` | TCP bağlantısı bile kurulmuyor, dpetoos aşamaz |
 | `zaten aciliyor` | Burada engel yok |
 | `SNI engeli` | **dpetoos bunu aşabilir** — tarama başlar |
@@ -410,7 +435,7 @@ yazılımı müdahalesi) pencere hatayı gösterir, tepsideyken de baloncuk uyar
 çıkar. Ayrıca `bin\dpetoos-fault.log` dosyasına zaman damgalı olarak yazılır.
 Dosya yoksa hiç arıza olmamış demektir — sorunu başka yerde aramak lazım.
 
-**Bir şey bozulduysa** — dpetoos'yu kapat. Tüm değişiklikler süreç ömrüyle
+**Bir şey bozulduysa** — dpetoos'u kapat. Tüm değişiklikler süreç ömrüyle
 sınırlı; kapanınca sürücü kaldırılır, ağ yapılandırmasında kalıcı hiçbir
 iz bırakmaz. Kayıt defterine, hosts dosyasına, DNS ayarlarına dokunmaz.
 

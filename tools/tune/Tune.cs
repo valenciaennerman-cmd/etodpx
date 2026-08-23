@@ -195,7 +195,7 @@ namespace Dpetoos.Tune
 
             WriteConf(best);
             WL();
-            WL("  Yazildi. dpetoos'yu yeniden baslat.");
+            WL("  Yazildi. dpetoos'u yeniden baslat.");
             WL();
             Pause();
             return Finish(0);
@@ -644,7 +644,7 @@ namespace Dpetoos.Tune
                 catch (Exception ex)
                 {
                     WL("  dpetoos durdurulamadi: " + ex.Message);
-                    WL("  Once dpetoos'yu elle kapat, sonra tekrar dene.");
+                    WL("  Once dpetoos'u elle kapat, sonra tekrar dene.");
                     Pause();
                     return false;
                 }
