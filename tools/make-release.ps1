@@ -12,6 +12,8 @@
 # Yonetici gerekmez.
 #   powershell -ExecutionPolicy Bypass -File tools\make-release.ps1
 
+param([string]$Version = '1.0')
+
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
@@ -105,7 +107,15 @@ uygulama kapaninca kaldirilir.
 '@
 [IO.File]::WriteAllText((Join-Path $Out 'OKU.txt'), $oku, (New-Object Text.UTF8Encoding($false)))
 
-# --- 5) ozet ---------------------------------------------------------------
+# --- 5) arsiv --------------------------------------------------------------
+# ZIP, RAR degil: Windows ZIP'i cift tiklamayla acar. RAR icin karsi tarafin
+# WinRAR ya da 7-Zip kurmus olmasi gerekir - "Discord acilsin" diye gelen
+# birine once arsiv programi kurdurmak gereksiz engel.
+$zip = Join-Path $Root ("release\etodpx-v" + $Version + ".zip")
+if (Test-Path $zip) { Remove-Item $zip -Force }
+Compress-Archive -Path $Out -DestinationPath $zip -CompressionLevel Optimal
+
+# --- 6) ozet ---------------------------------------------------------------
 $size = (Get-ChildItem $Out -File | Measure-Object -Property Length -Sum).Sum
 Write-Host ''
 Write-Host '  HAZIR' -ForegroundColor Green
@@ -114,6 +124,10 @@ Write-Host ("    {0} dosya, {1:N1} MB" -f (Get-ChildItem $Out -File).Count, ($si
 Write-Host ''
 Get-ChildItem $Out -File | ForEach-Object { Write-Host ("      " + $_.Name) }
 Write-Host ''
-Write-Host '  Bu klasoru RAR/ZIP yapip paylasabilirsin.'
+Write-Host ''
+Write-Host ("  ARSIV: " + $zip) -ForegroundColor Green
+Write-Host ("         {0:N0} KB - paylasmaya hazir" -f ((Get-Item $zip).Length / 1KB))
+Write-Host ''
 Write-Host '  Ayar dosyasi guvenli sablon - karsi taraf kendi ayarini olcecek.'
+Write-Host '  Baska surum icin:  make-release.ps1 -Version 1.1'
 Write-Host ''
