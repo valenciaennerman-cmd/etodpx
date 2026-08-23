@@ -261,7 +261,13 @@ namespace Etodpx.Tune
                         msg = "DNS ZEHIRLI - once DNS'i duzelt, etodpx bunu asamaz";
                         break;
                     case Diag.IpBlocked:
-                        msg = "IP seviyesinde engel - TCP baglantisi bile kurulmuyor, etodpx asamaz";
+                        // DNS karsilastirmasi yapilamadiysa bu teshis GUVENILMEZ:
+                        // sistem DNS'i sahte bir adres vermis olabilir ve TCP o
+                        // yuzden kurulmuyordur. Bunu gizlemek kullaniciyi "VPN
+                        // sart" sonucuna yanlis yonlendirir.
+                        msg = _dnsCompareFailed
+                            ? "TCP baglantisi kurulmuyor - AMA DNS dogrulanamadi (asagiya bak)"
+                            : "IP seviyesinde engel - TCP baglantisi bile kurulmuyor, etodpx asamaz";
                         break;
                     case Diag.Open:
                         msg = "zaten aciliyor - burada asilacak engel yok";
@@ -276,8 +282,40 @@ namespace Etodpx.Tune
                         break;
                 }
                 WL(("  " + host).PadRight(32) + msg);
+
+                // Cozumlenen adresi de yaz: teshisin dayanagini kullanici gorsun.
+                try
+                {
+                    var ips = System.Net.Dns.GetHostAddresses(host);
+                    var v4 = new List<string>();
+                    foreach (var a in ips)
+                        if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                            v4.Add(a.ToString());
+                    if (v4.Count > 0)
+                        WL("".PadRight(34) + "cozumlenen adres: " + string.Join(", ", v4.ToArray()));
+                }
+                catch { }
             }
             WL();
+
+            if (_dnsCompareFailed)
+            {
+                WL("  UYARI: 1.1.1.1 ve 8.8.8.8'e ne dogrudan ne de DoH ile ulasilabildi.");
+                WL("  Agin dis DNS sunucularini engelliyor olabilir. Bu durumda sistem");
+                WL("  DNS'inin dogru cevap verip vermedigini DOGRULAYAMIYORUZ.");
+                WL();
+                WL("  Yukaridaki 'cozumlenen adres' satirina bak:");
+                WL("    195.175.254.2  -> engel sayfasi, DNS zehirli");
+                WL("    0.0.0.0        -> DNS bilerek bosa dusurmus");
+                WL("    162.159.x.x    -> gercek adres, DNS temiz");
+                WL();
+                WL("  DNS zehirliyse duz DNS degistirmek ise yaramaz (UDP 53 kapali).");
+                WL("  DNS over HTTPS gerekir:");
+                WL("    Ayarlar > Ag ve Internet > Wi-Fi > Donanim ozellikleri >");
+                WL("    DNS sunucusu atamasi > Duzenle > El ile > IPv4 acik >");
+                WL("    Tercih edilen: 1.1.1.1  ve altindaki 'DNS over HTTPS' = Acik");
+                WL();
+            }
 
             if (_dnsPoisoned)
             {
@@ -346,11 +384,29 @@ namespace Etodpx.Tune
         /// Referanslar birbirini tutmuyorsa alan adi zaten degisken demektir ve
         /// hicbir sey iddia edilmez.
         /// </summary>
+        /// <summary>
+        /// Referans cozumleyicilere hic ulasilamadi mi? Bazi aglar UDP 53'u kendi
+        /// DNS'i disinda kapatir; o zaman karsilastirma yapilamaz ve "zehirli
+        /// degil" demek YANLIS olur. Bu bayrak teshiste ayrica belirtilir.
+        /// </summary>
+        private static bool _dnsCompareFailed;
+
         private static bool IsDnsPoisoned(string host, System.Net.IPAddress[] systemIps)
         {
             var r1 = ResolveVia("1.1.1.1", host);
             var r2 = ResolveVia("8.8.8.8", host);
-            if (r1.Count == 0 || r2.Count == 0) return false;
+
+            // UDP 53 kapaliysa DoH'a dus: HTTPS uzerinden gider (443), modem onu
+            // kapatamaz cunku kapatirsa tum web coker. Iki AYRI saglayici
+            // kullaniyoruz - tek kaynakla CDN adres degisimi yanlis alarm verir.
+            if (r1.Count == 0) r1 = ResolveViaDoh(host, "https://1.1.1.1/dns-query");
+            if (r2.Count == 0) r2 = ResolveViaDoh(host, "https://dns.google/resolve");
+
+            if (r1.Count == 0 || r2.Count == 0)
+            {
+                _dnsCompareFailed = true;
+                return false;
+            }
 
             bool referencesAgree = false;
             foreach (var a in r1)
@@ -367,6 +423,49 @@ namespace Etodpx.Tune
                 if (r1.Contains(a) || r2.Contains(a)) return false;   // ortak adres var
 
             return true;
+        }
+
+        /// <summary>
+        /// DNS over HTTPS ile cozumler. Bazi aglar UDP 53'u kendi DNS'i disinda
+        /// kapatir; DoH 443 uzerinden gittigi icin bu kisittan etkilenmez.
+        /// Cloudflare ve Google ayni JSON bicimini donduruyor: {"Answer":[{"data":"1.2.3.4"}]}
+        /// </summary>
+        private static List<string> ResolveViaDoh(string host, string endpoint)
+        {
+            var result = new List<string>();
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                string url = endpoint + "?name=" + Uri.EscapeDataString(host) + "&type=A";
+                var req = (HttpWebRequest)WebRequest.Create(url);
+                req.Accept = "application/dns-json";
+                req.UserAgent = "etodpx";
+                req.Timeout = 5000;
+                req.ReadWriteTimeout = 5000;
+
+                using (var resp = (HttpWebResponse)req.GetResponse())
+                using (var sr = new StreamReader(resp.GetResponseStream()))
+                {
+                    string body = sr.ReadToEnd();
+                    // Tam JSON ayristiricisina gerek yok: "data":"<ipv4>" ariyoruz.
+                    const string key = "\"data\":\"";
+                    int i = 0;
+                    while ((i = body.IndexOf(key, i, StringComparison.Ordinal)) >= 0)
+                    {
+                        i += key.Length;
+                        int end = body.IndexOf('"', i);
+                        if (end < 0) break;
+                        string val = body.Substring(i, end - i);
+                        System.Net.IPAddress ip;
+                        if (System.Net.IPAddress.TryParse(val, out ip) &&
+                            ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                            result.Add(val);
+                        i = end;
+                    }
+                }
+            }
+            catch { /* DoH da kapaliysa karsilastirma yapilamaz */ }
+            return result;
         }
 
         /// <summary>
