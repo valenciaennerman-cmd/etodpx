@@ -93,6 +93,15 @@ nslookup discord.com 1.1.1.1
 
 İki cevap tamamen farklıysa DNS'in zehirli.
 
+**Aynı ISS'te bile değişir.** DNS engelini görüp görmemen, modeminin cihazlara
+hangi çözümleyiciyi dağıttığına bağlı. Test ettiğim ağda ISS'in kendi DNS
+sunucuları `discord.com` için hâlâ engel sayfası döndürüyor, ama modem
+cihazlara başka bir çözümleyici dağıttığı için hiçbir bilgisayarda elle ayar
+gerekmedi — üç ayrı cihazda doğrulandı. Başka bir modemde tam tersi olabilir.
+
+Bu yüzden "önce DNS'i değiştir" diye bir adım yok: `dpetoos-tune.exe` bunu
+kendisi ölçüp `DNS ZEHIRLI` diye söylüyor ve ne yapman gerektiğini yazıyor.
+
 ---
 
 ## Ping ve hız neden etkilenmiyor
