@@ -24,6 +24,7 @@ namespace Etodpx.Engine
         private const int ErrorInvalidImageHash = 577;
         private const int ErrorServiceDoesNotExist = 1060;
         private const int ErrorDriverBlocked = 1275;
+        private const int ErrorServiceDisabled = 1058;
 
         private readonly Config _cfg;
         private readonly Stats _stats = new Stats();
@@ -220,11 +221,21 @@ namespace Etodpx.Engine
                     return "WinDivert sürücüsünün imzası Windows tarafından kabul edilmedi.\n" +
                            "Resmi WinDivert 2.2.2 paketini kullanın.";
                 case ErrorServiceDoesNotExist:
-                    return "WinDivert servisi kurulamadı. Bir güvenlik yazılımı engelliyor olabilir.";
+                    return "WinDivert servisi kurulamadı. Bir güvenlik yazılımı engelliyor olabilir.\n" +
+                           "Antivirüsü geçici kapatıp tekrar deneyin.";
                 case ErrorDriverBlocked:
-                    return "Sürücü Windows tarafından engellendi (Bellek Bütünlüğü / Çekirdek Yalıtımı açık olabilir).";
-                case 1058:
-                    return "WinDivert servisi devre dışı bırakılmış.";
+                    return "Sürücü Windows tarafından engellendi.\n" +
+                           "Windows Güvenliği > Cihaz güvenliği > Çekirdek yalıtımı >\n" +
+                           "Bellek bütünlüğü açıksa kapatıp bilgisayarı yeniden başlatın.";
+                case ErrorServiceDisabled:
+                    // Makinede eski bir WinDivert servisi kayitli ve "Devre Disi"
+                    // yapilmis. Genelde onceki bir GoodbyeDPI/zapret kurulumundan
+                    // ya da antivirus mudahalesinden kalir. Silinince WinDivert
+                    // kendini sifirdan kurar - kullaniciya komutu aynen veriyoruz.
+                    return "Makinede devre dışı bırakılmış eski bir WinDivert servisi var.\n\n" +
+                           "Yönetici komut isteminde şunu çalıştırıp etodpx'i yeniden açın:\n" +
+                           "    sc stop WinDivert\n" +
+                           "    sc delete WinDivert";
                 default:
                     return "WinDivert açılamadı (hata kodu " + err + ").";
             }

@@ -77,6 +77,20 @@ etodpx - kurulum yok, tek dosya calistir
 4) Siteyi dene.
 
 
+"WinDivert servisi devre disi birakilmis" hatasi
+------------------------------------------------
+
+Makinende eski bir WinDivert servisi var ve kapatilmis. Genelde daha once
+kurulmus bir GoodbyeDPI / zapret kalintisindan olur.
+
+Yonetici komut isteminde su ikisini calistir:
+
+    sc stop WinDivert
+    sc delete WinDivert
+
+Sonra etodpx.exe'yi yeniden ac. Servis kendini sifirdan kurar.
+
+
 Site hala acilmiyorsa
 ---------------------
 

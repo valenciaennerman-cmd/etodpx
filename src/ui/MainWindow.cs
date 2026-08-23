@@ -386,6 +386,16 @@ namespace Etodpx.Ui
                         _lastError = err;
                         _power.SetBusy(false);
                         ApplyState();
+
+                        // Baslatma hatalari genelde kullanicinin yapabilecegi bir
+                        // sey iceriyor (servisi sil, Bellek Butunlugu'nu kapat).
+                        // Bunu dar alt satira sigdirmak yerine kopyalanabilir bir
+                        // pencerede gosteriyoruz.
+                        if (err != null && starting)
+                        {
+                            MessageBox.Show(this, err, "etodpx - koruma başlatılamadı",
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
                     }));
                 }
                 catch (InvalidOperationException) { }   // pencere zaten kapandi
@@ -416,7 +426,9 @@ namespace Etodpx.Ui
                 _title.Foreground = _danger;
                 _subtitle.Text = "Koruma başlatılamadı";
                 _footer.Foreground = _danger;
-                _footer.Text = _lastError;
+                // Alt satir dar: cok satirli bir cozum metni burada kirpilir.
+                // Ilk satiri gosterip gerisini pencereye biraktik.
+                _footer.Text = FirstLine(_lastError);
                 return;
             }
 
@@ -453,6 +465,15 @@ namespace Etodpx.Ui
         {
             if (!_cfg.FakeBadSum && !_cfg.FakeTtl && !_cfg.FakeWrongSeq) return false;
             return _cfg.TlsMode.Contains("fake") || _cfg.HttpMode.Contains("fake");
+        }
+
+        /// <summary>Cok satirli bir mesajin dar alt satira sigan ilk satiri.</summary>
+        private static string FirstLine(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            int i = s.IndexOfAny(new[] { '\r', '\n' });
+            string head = i < 0 ? s : s.Substring(0, i);
+            return i < 0 ? head : head + "  (ayrıntı için pencereye bak)";
         }
 
         private string FooterInfo()

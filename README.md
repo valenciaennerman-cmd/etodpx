@@ -443,6 +443,18 @@ nslookup discord.com 1.1.1.1
 ağ adaptörü varsa yanlışına yazmış olabilirsin, `Get-DnsClientServerAddress`
 ile hangisinin aktif olduğunu gör.
 
+**"WinDivert servisi devre dışı bırakılmış"** — makinede eski bir WinDivert
+servisi kayıtlı ve başlatma tipi *Devre Dışı* yapılmış. Genelde daha önce
+kurulmuş bir GoodbyeDPI / zapret / ByeDPI kalıntısı ya da antivirüs
+müdahalesidir. Yönetici komut isteminde:
+
+```bat
+sc stop WinDivert
+sc delete WinDivert
+```
+
+Sonra etodpx'i yeniden aç — WinDivert servisi kendini sıfırdan kurar.
+
 **"Yönetici izni gerekiyor"** — WinDivert bir çekirdek sürücüsü, yönetici
 olmadan yüklenemez. `bin\etodpx.exe` zaten yönetici isteyecek şekilde
 imzalanmış manifest taşıyor; UAC penceresini onayla.
