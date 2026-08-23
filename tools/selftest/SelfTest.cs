@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Etodpx;
 using Etodpx.Engine;
+using Etodpx.Tune;
 
 namespace Etodpx.Test
 {
@@ -38,6 +39,7 @@ namespace Etodpx.Test
 
             TestInterop();
             TestConfig();
+            TestTunerDiagnostics();
             TestFilters();
             TestFakeClientHello();
             TestSniParser();
@@ -55,6 +57,25 @@ namespace Etodpx.Test
             Console.WriteLine("gecen: " + _pass + "   kalan: " + _fail);
             Console.WriteLine();
             return _fail == 0 ? 0 : 1;
+        }
+
+        private static void TestTunerDiagnostics()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- otomatik tani siniflandirmasi");
+
+            Check(Tuner.ToHostName("https://discord.com/channels/@me") == "discord.com",
+                "tam adresten hedef alani ayriliyor");
+            Check(Tuner.ToHostName("discord.com:443") == "discord.com",
+                "port hedef alan adindan ayriliyor");
+            Check(Tuner.ToHostName("https://kullanici:parola@discord.com/login") == "discord.com",
+                "gercek kullanici bilgisi alan adindan ayriliyor");
+            Check(Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("195.175.254.2")),
+                "bilinen IPv4 engel sayfasi yakalaniyor");
+            Check(Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("2a01:358:4014:a00::3")),
+                "bilinen IPv6 engel sayfasi yakalaniyor");
+            Check(!Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("1.1.1.1")),
+                "normal DNS adresi zehirli sayilmiyor");
         }
 
         // -------------------------------------------------------------- interop

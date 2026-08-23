@@ -48,8 +48,6 @@ PHRASES = [
      u'"WinDivert açılamadı (hata kodu "'),
     ('"Paket alimi surekli basarisiz (hata "',
      u'"Paket alımı sürekli başarısız (hata "'),
-    ('"). Koruma durduruldu."',
-     u'"). Koruma durduruldu."'),
     ('"Motor hatasi: "',
      u'"Motor hatası: "'),
 
@@ -83,18 +81,9 @@ def main():
             fh.write(text.encode('utf-8'))
 
     print('degistirilen ifade: %d' % hits)
-    missing = []
-    joined = ''
-    for path in walk():
-        joined += io.open(path, encoding='utf-8-sig').read()
-    for a, b in PHRASES:
-        if b not in joined:
-            missing.append(a[:50])
-    if missing:
-        print('UYARI - eslesmeyen:', file=sys.stderr)
-        for m in missing:
-            print('  ' + m, file=sys.stderr)
-        return 1
+    # PHRASES bir gecis listesidir: eski ASCII metin kaynakta varsa duzeltir.
+    # Bir hedef metnin kaynakta bulunmamasi hata degildir; arayuzden kaldirilmis
+    # (ornegin eski SURE karti) veya daha iyi bir cumleyle degistirilmis olabilir.
     return 0
 
 

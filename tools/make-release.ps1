@@ -57,8 +57,8 @@ Copy-Item 'etodpx.conf' (Join-Path $Out 'etodpx.conf') -Force
 
 # --- 4) kullanim notu ------------------------------------------------------
 $oku = @'
-etodpx - kurulum yok, tek dosya calistir
-========================================
+etodpx - kurulum yok, tek dugmeyle calisir
+===========================================
 
 1) Bu klasoru masaustune (ya da istedigin bir yere) cikar.
    Zip/rar icinden DOGRUDAN calistirma, once cikar.
@@ -72,52 +72,42 @@ etodpx - kurulum yok, tek dosya calistir
    Ardindan yonetici izni ister. Evet de.
    WinDivert bir cekirdek surucusu, onsuz paket yakalanamaz.
 
-3) Ortadaki dugmeye bas. "KORUMA ACIK" yazacak.
+3) Uygulama korumayi kendisi baslatir. "KORUMA ACIK" yazinca hazir.
+
+   Baslatma hatasi olursa uygulamadaki dugme "Sorunu duzelt ve tekrar dene"
+   haline gelir. Once bu dugmeye bas; eski WinDivert kalintisini temizleyip
+   korumayi yeniden dener.
 
 4) Siteyi dene.
-
-
-"WinDivert servisi devre disi birakilmis" hatasi
-------------------------------------------------
-
-Makinende eski bir WinDivert servisi var ve kapatilmis. Genelde daha once
-kurulmus bir GoodbyeDPI / zapret kalintisindan olur.
-
-Yonetici komut isteminde su ikisini calistir:
-
-    sc stop WinDivert
-    sc delete WinDivert
-
-Sonra etodpx.exe'yi yeniden ac. Servis kendini sifirdan kurar.
 
 
 Site hala acilmiyorsa
 ---------------------
 
-Bu klasorde yonetici komut istemi ac ve sunu calistir:
+Uygulamadaki "Discord acilmiyor mu? Tek tikla duzelt" dugmesine bas.
+Sirayla surucuyu, DNS'i ve Discord engelini test eder. Gerekirse aktif internet
+baglantisinin eski DNS ayarini yedekleyip sifreli DNS kurar; calismazsa geri
+alir. Sonra bu bilgisayara uygun ayari bulup korumayi yeniden baslatir.
+Komut yazman gerekmez.
 
-    etodpx-tune.exe discord.com
-
-("discord.com" yerine acilmayan sitenin adresini yaz.)
-
-Arac ne yapman gerektigini soyler:
+Sonucu uygulama soyler:
 
   "zaten aciliyor"        -> o sitede engel yok
-  "DNS ZEHIRLI"           -> DNS'ini 1.1.1.1 / 1.0.0.1 yap, adimlari yazar
-  "SNI engeli"            -> kendisi dogru ayari bulup yazar, sonra
-                             etodpx.exe'yi yeniden baslat
+  "DNS ZEHIRLI"           -> aktif baglantiya yedekli sifreli DNS kurmayi dener
+  "SNI engeli"            -> dogru ayari bulup hemen uygular
   "IP seviyesinde engel"  -> etodpx bunu asamaz, VPN gerekir
 
 Onemli: ayar dosyasi (etodpx.conf) makineye ozeldir. Baskasindan aldigin
-bir ayari kopyalama - her bilgisayarda bir kez etodpx-tune.exe calistir.
+bir ayari kopyalama; her bilgisayarda otomatik duzeltmeyi bir kez calistir.
 
 
 Kaldirma
 --------
 
-Uygulamayi kapat, klasoru sil. Bu kadar.
-Kayit defterine, hosts dosyasina, DNS ayarlarina dokunmaz; surucu de
-uygulama kapaninca kaldirilir.
+Uygulamayi kapat, klasoru sil. Surucu uygulama kapaninca kaldirilir.
+Tek tikla duzelt sifreli DNS kurduysa ayar kalici olur; onceki DNS sunuculari
+etodpx-dns-backup-<adaptor>.conf dosyasinda saklanir. Basarisiz DNS kurulumu
+zaten otomatik geri alinir. Hosts dosyasina dokunulmaz.
 '@
 [IO.File]::WriteAllText((Join-Path $Out 'OKU.txt'), $oku, (New-Object Text.UTF8Encoding($false)))
 

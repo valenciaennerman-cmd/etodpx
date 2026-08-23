@@ -3,7 +3,10 @@
 Windows için DPI atlatma aracı. GoodbyeDPI ve zapret ile aynı işi yapar, ama
 tek bir tasarım hedefi var: **ping'e ve hıza dokunmamak.**
 
-Arayüzde tek bir düğme var: başlat/durdur. Başka hiçbir şey yok.
+Arayüzde günlük kullanım için tek bir büyük düğme var. Bir site açılmazsa
+aynı penceredeki **Discord açılmıyor mu? Tek tıkla düzelt** düğmesi bağlantıya uygun
+ayarı kendi bulur. Koruma başlatılırken bir hata oluşursa bu düğme duruma göre
+**Sorunu düzelt ve tekrar dene** seçeneğine dönüşür.
 
 ---
 
@@ -32,8 +35,8 @@ derleniyor. Karışmasın diye:
 | **`etodpx.cmd`** | Gerekirse derler, WinDivert eksikse indirir, uygulamayı açar | **Normalde sadece buna çift tıkla.** Tek ihtiyacın olan bu. |
 | `build.cmd` | Yalnızca derler, hiçbir şey açmaz | Kaynak kodu değiştirdiysen |
 | `tools\setup-windivert.cmd` | Sürücüyü indirir | `etodpx.cmd` zaten çağırıyor; elle kurmak istersen |
-| `bin\etodpx-tune.exe` | Hattına uyan ayarı ölçerek bulur | Bir site açılmıyorsa |
-| `tools\test\test-all.cmd` | 174 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
+| `bin\etodpx-tune.exe` | Arayüzün kullandığı otomatik ölçüm aracı | Normal kullanıcı bunu elle açmaz |
+| `tools\test\test-all.cmd` | 180 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
 
 Yani sıradan bir kullanıcı için tek adım var:
 
@@ -48,21 +51,22 @@ paket yakalanamaz.
 
 ### Site hâlâ açılmıyorsa
 
-```bat
-bin\etodpx-tune.exe acilmayansite.com
-```
+Ana penceredeki **Discord açılmıyor mu? Tek tıkla düzelt** düğmesine bas. Uygulama
+önce sürücüyü, sonra DNS'i, ardından TLS/SNI engelini ve bağlantı stratejisini
+sırayla ölçer. DNS bozuksa aktif internet adaptörünün mevcut ayarını yedekleyip
+şifreli DNS dener; doğrulanmazsa eski ayarı geri yükler. Çalışan stratejiyi
+`etodpx.conf` dosyasına yazar ve korumayı yeniden açar. Komut istemi açmak,
+klasör adresi yazmak veya uygulamayı yeniden başlatmak gerekmez.
 
-Bu araç **tahmin etmez, ölçer.** Önce engelin cinsini bulur:
+Ölçüm önce engelin cinsini bulur:
 
 | Ne diyorsa | Ne yapacaksın |
 |---|---|
 | `zaten aciliyor` | Bir şey yapma, o sitede engel yok |
 | `DNS ZEHIRLI` | DNS'ini **1.1.1.1 / 1.0.0.1** yap — araç adım adım söyler |
-| `SNI engeli` | Hiçbir şey; araç 31 stratejiyi dener ve doğrusunu `etodpx.conf`'a yazar |
+| `SNI engeli` | Hiçbir şey; uygulama stratejileri dener ve doğrusunu uygular |
 | `IP seviyesinde engel` | etodpx bunu aşamaz, VPN gerekir |
 | `alan adi cozulemiyor` | Yazım hatası |
-
-Sonra etodpx'i yeniden başlat.
 
 > **Önemli:** Depodaki `fake_ttl_value = 4` yalnızca örnek başlangıç değeridir.
 > Sahte TCP paketi varsayılan olarak kapalıdır; bu değer ancak `fake_ttl = true`
@@ -85,11 +89,8 @@ ama site açılmaz.
 Wi-Fi ile kablolu bağlantı arasında geçmek, modem değiştirmek, farklı ISS —
 hepsi aynı sonucu verir.
 
-**Doğrusu:** her yeni cihazda bir kez ayarlayıcıyı çalıştır.
-
-```bat
-bin\etodpx-tune.exe discord.com
-```
+**Doğrusu:** her yeni cihazda ana penceredeki **Otomatik düzelt** düğmesini bir
+kez çalıştır.
 
 Klasörü paylaşırken `bin\etodpx.conf` dosyasını **hiç koyma** — uygulama ilk
 açılışta güvenli şablondan kendisi üretir.
@@ -114,9 +115,10 @@ sunucuları `discord.com` için engel sayfasını (`195.175.254.2`) döndürüyo
 Elle ayarlanan `1.1.1.1 / 1.0.0.1` kaldırılıp otomatiğe dönüldüğünde Discord
 tekrar açılmaz hale geldi — yani DHCP ile gelen çözümleyici zehirli.
 
-Yine de bunu peşinen yapma: `etodpx-tune.exe` DNS'i sistem çözümleyicisiyle
-iki bağımsız kaynağı karşılaştırarak ölçüyor ve gerekiyorsa `DNS ZEHIRLI` deyip
-adımları yazıyor. Gerekmiyorsa boşuna uğraşmamış olursun.
+Yine de bunu peşinen yapma: ana penceredeki **Tek tıkla düzelt** akışı DNS'i
+sistem çözümleyicisiyle bağımsız DoH kaynaklarına karşı ölçüyor. Gerekirse aktif
+adaptöre Cloudflare DoH kuruyor; değişiklikten önce
+`etodpx-dns-backup-<adaptör>.conf` dosyasına geri alma noktası yazıyor.
 
 ---
 
@@ -430,18 +432,19 @@ powershell -File tools\uipreview\shoot.ps1 -State on
 
 ## Sorun giderme
 
-**Site hâlâ engel sayfasına gidiyor** — etodpx DNS'e dokunmaz. ISS'inin DNS'i
-engelli alan adı için sahte IP döndürüyorsa, etodpx ne yaparsa yapsın engel
-sayfasına bağlanırsın (belirtisi: sertifika adı uyuşmazlığı hatası). Kontrol et:
+**Site hâlâ engel sayfasına gidiyor** — ana koruma motoru DNS'e dokunmaz; ancak
+**Tek tıkla düzelt** akışı zehirlenme ölçerse aktif bağlantıya geri alınabilir
+şifreli DNS kurabilir. ISS DNS'i sahte IP döndürüyorsa yalnızca paket parçalamak
+yetmez (belirtisi: sertifika adı uyuşmazlığı hatası).
 
 ```bat
 nslookup discord.com
 nslookup discord.com 1.1.1.1
 ```
 
-İkisi farklı çıkıyorsa DNS'in zehirli. Doğru adaptöre 1.1.1.1 yaz — birden fazla
-ağ adaptörü varsa yanlışına yazmış olabilirsin, `Get-DnsClientServerAddress`
-ile hangisinin aktif olduğunu gör.
+Uygulama aktif internet rotasını kendisi seçer; kullanılmayan ikinci Wi-Fi
+adaptörüne ayar yazmaz. DoH doğrulanamazsa eski DNS listesini geri yükler ve
+`etodpx-repair.log` tanı raporunu bırakır.
 
 **"WinDivert servisi devre dışı bırakılmış"** — makinede eski bir WinDivert
 servisi kayıtlı ve başlatma tipi *Devre Dışı* yapılmış. Genelde daha önce
@@ -472,9 +475,11 @@ yazılımı müdahalesi) pencere hatayı gösterir, tepsideyken de baloncuk uyar
 çıkar. Ayrıca `bin\etodpx-fault.log` dosyasına zaman damgalı olarak yazılır.
 Dosya yoksa hiç arıza olmamış demektir — sorunu başka yerde aramak lazım.
 
-**Bir şey bozulduysa** — etodpx'i kapat. Tüm değişiklikler süreç ömrüyle
-sınırlı; kapanınca sürücü kaldırılır, ağ yapılandırmasında kalıcı hiçbir
-iz bırakmaz. Kayıt defterine, hosts dosyasına, DNS ayarlarına dokunmaz.
+**Bir şey bozulduysa** — sürücü uygulama kapanınca kaldırılır. Tek tıkla düzelt
+şifreli DNS'i başarıyla kurduysa bu ayar Discord'un çalışmaya devam etmesi için
+kalıcıdır; önceki sunucular uygulama klasöründeki
+`etodpx-dns-backup-<adaptör>.conf` dosyasında saklanır. Başarısız kurulumlarda
+uygulama bu yedeği kendisi geri yükler. Hosts dosyasına dokunulmaz.
 
 ---
 

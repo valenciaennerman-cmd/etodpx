@@ -63,7 +63,9 @@ namespace Etodpx.Tune
         private static string[] _targets;
         private const int TriesPerTarget = 3;
         private static bool _auto;
+        private static bool _manageApp = true;
         private static bool _etodpxWasRunning;
+        private static string _resultCode;
         private static readonly StringBuilder _log = new StringBuilder();
 
         private static void W(string s) { Console.Write(s); _log.Append(s); }
@@ -79,6 +81,7 @@ namespace Etodpx.Tune
             foreach (var a in args)
             {
                 if (a == "--auto" || a == "-a") _auto = true;
+                else if (a == "--no-manage-app") _manageApp = false;
                 else rest.Add(a);
             }
             if (rest.Count == 0)
@@ -97,6 +100,7 @@ namespace Etodpx.Tune
             {
                 WL("  Gecerli bir alan adi verilmedi.");
                 WL("  Ornek: etodpx-tune.exe discord.com");
+                SetResult("INVALID_TARGET");
                 Pause();
                 return 1;
             }
@@ -108,9 +112,22 @@ namespace Etodpx.Tune
             WL("  hedefler : " + string.Join(", ", _targets));
             WL();
 
-            if (!StopRunningEtodpx()) return Finish(1);
+            if (_manageApp)
+            {
+                if (!StopRunningEtodpx())
+                {
+                    SetResult("APP_BUSY");
+                    return Finish(1);
+                }
+            }
+            else ReportOtherCopies();
 
-            if (!Preflight()) { Pause(); return Finish(3); }
+            if (!Preflight())
+            {
+                if (_resultCode == null) SetResult("PREFLIGHT_FAILED");
+                Pause();
+                return Finish(3);
+            }
 
             var strategies = BuildStrategies();
 
@@ -129,6 +146,7 @@ namespace Etodpx.Tune
                 WL("  Farkli bir hedef verip tekrar dene:");
                 WL("    etodpx-tune.exe engellisite.com");
                 WL();
+                SetResult("ALREADY_OPEN");
                 Pause();
                 return Finish(0);
             }
@@ -148,6 +166,15 @@ namespace Etodpx.Tune
 
                 if (score > bestScore) { bestScore = score; best = s; }
                 FlushLog();                              // ilerleme disaridan izlenebilsin
+
+                // Stratejiler en guvenliden daha agresife dogru sirali. Bir
+                // strateji tum denemeleri gecince daha riskli 30 secenegi bosuna
+                // taramak yalnizca kullaniciyi bekletir.
+                if (score == total)
+                {
+                    WL("  Tam uyum bulundu; kalan denemeler atlandi.");
+                    break;
+                }
             }
 
             WL();
@@ -171,6 +198,7 @@ namespace Etodpx.Tune
                 WL("  Hicbir strateji temel durumu gecemedi.");
                 WL("  Bu hedef muhtemelen IP seviyesinde engelli; DPI atlatma yetmez.");
                 WL();
+                SetResult("NO_STRATEGY");
                 Pause();
                 return Finish(2);
             }
@@ -189,6 +217,7 @@ namespace Etodpx.Tune
                 WL("  Yazilmadi. Elle eklemek istersen:");
                 WL();
                 WL(best.ConfLines());
+                SetResult("NOT_WRITTEN");
                 Pause();
                 return Finish(0);
             }
@@ -197,6 +226,7 @@ namespace Etodpx.Tune
             WL();
             WL("  Yazildi. etodpx'i yeniden baslat.");
             WL();
+            SetResult("CONFIG_WRITTEN");
             Pause();
             return Finish(0);
         }
@@ -205,7 +235,7 @@ namespace Etodpx.Tune
         /// "https://www.site.com/a/b?x=1" -> "www.site.com"
         /// Sema, kullanici bilgisi, port, yol ve parca atilir.
         /// </summary>
-        private static string ToHostName(string raw)
+        internal static string ToHostName(string raw)
         {
             if (string.IsNullOrEmpty(raw)) return string.Empty;
             string t = raw.Trim().Trim('"');
@@ -213,10 +243,16 @@ namespace Etodpx.Tune
             int scheme = t.IndexOf("://", StringComparison.Ordinal);
             if (scheme >= 0) t = t.Substring(scheme + 3);
 
-            int at = t.IndexOf('@');                  // kullanici:parola@
-            if (at >= 0) t = t.Substring(at + 1);
-
             int cut = t.IndexOfAny(new[] { '/', '?', '#', (char)92 });   // 92 = ters boluk
+            int at = t.IndexOf('@');                  // kullanici:parola@
+            // @ yalnizca adresin authority bolumundeyse kullanici bilgisidir.
+            // /channels/@me gibi bir yol parcasi alan adini "me"ye cevirmemeli.
+            if (at >= 0 && (cut < 0 || at < cut))
+            {
+                t = t.Substring(at + 1);
+                cut = t.IndexOfAny(new[] { '/', '?', '#', (char)92 });
+            }
+
             if (cut >= 0) t = t.Substring(0, cut);
 
             if (t.StartsWith("[", StringComparison.Ordinal))   // IPv6 hazir bulunsun
@@ -245,12 +281,20 @@ namespace Etodpx.Tune
         {
             WL("  --- on teshis ---");
             bool anySni = false;
+            bool anyOpen = false;
+            bool anyNoDns = false;
+            bool anyIpBlocked = false;
             _dnsPoisoned = false;
+            _dnsCompareFailed = false;
+            _dnsResolutionFailed = false;
 
             foreach (string host in _targets)
             {
                 Diag d = Diagnose(host);
                 if (d == Diag.DnsPoisoned) _dnsPoisoned = true;
+                if (d == Diag.NoDns) anyNoDns = true;
+                if (d == Diag.IpBlocked) anyIpBlocked = true;
+                if (d == Diag.Open) anyOpen = true;
                 string msg;
                 switch (d)
                 {
@@ -333,6 +377,7 @@ namespace Etodpx.Tune
                 WL("  Birden fazla ag baglantin varsa DOGRU olanina yazdigindan emin ol.");
                 WL("  Sonra bu araci tekrar calistir.");
                 WL();
+                SetResult("DNS_POISONED");
                 return false;
             }
 
@@ -342,12 +387,18 @@ namespace Etodpx.Tune
                 WL("  Gercek ve engelli bir site adiyla tekrar dene, ornegin:");
                 WL("    etodpx-tune.exe discord.com");
                 WL();
+                if (_dnsResolutionFailed || anyNoDns) SetResult("DNS_UNAVAILABLE");
+                else if (_dnsCompareFailed) SetResult("DNS_UNVERIFIED");
+                else if (anyOpen) SetResult("ALREADY_OPEN");
+                else if (anyIpBlocked) SetResult("IP_BLOCKED");
+                else SetResult("NO_SNI");
                 return false;
             }
             return true;
         }
 
         private static bool _dnsPoisoned;
+        private static bool _dnsResolutionFailed;
 
         private static Diag Diagnose(string host)
         {
@@ -357,7 +408,19 @@ namespace Etodpx.Tune
                 ips = System.Net.Dns.GetHostAddresses(host);
                 if (ips.Length == 0) return Diag.NoDns;
             }
-            catch { return Diag.NoDns; }
+            catch
+            {
+                // Sistem DNS'i tamamen olu olabilir. En az bir bagimsiz DoH
+                // cevabi kaydin gercekte var oldugunu kanitlar; bunu "yazim
+                // hatasi" diye raporlamak kullaniciyi yanlis yere yollar.
+                var independent = ResolveViaDoh(host, "https://1.1.1.1/dns-query");
+                if (independent.Count > 0) _dnsResolutionFailed = true;
+                else _dnsCompareFailed = true;
+                return Diag.NoDns;
+            }
+
+            foreach (var ip in ips)
+                if (IsKnownPoisonAddress(ip)) return Diag.DnsPoisoned;
 
             // Sistem DNS'i ile bagimsiz bir cozumleyiciyi karsilastir. Ortak tek bir
             // adres bile yoksa sistem DNS'i sahte cevap donduruyor demektir - bu
@@ -391,13 +454,21 @@ namespace Etodpx.Tune
         /// </summary>
         private static bool _dnsCompareFailed;
 
+        internal static bool IsKnownPoisonAddress(System.Net.IPAddress ip)
+        {
+            string value = ip.ToString();
+            return value == "195.175.254.2" ||
+                   value.Equals("2a01:358:4014:a00::3", StringComparison.OrdinalIgnoreCase) ||
+                   value == "0.0.0.0" || value == "::";
+        }
+
         private static bool IsDnsPoisoned(string host, System.Net.IPAddress[] systemIps)
         {
             var r1 = ResolveVia("1.1.1.1", host);
             var r2 = ResolveVia("8.8.8.8", host);
 
-            // UDP 53 kapaliysa DoH'a dus: HTTPS uzerinden gider (443), modem onu
-            // kapatamaz cunku kapatirsa tum web coker. Iki AYRI saglayici
+            // UDP 53 kapaliysa DoH'a dus. DoH da ag tarafindan engellenebilir;
+            // bu yuzden basarisizlik "DNS temiz" sayilmaz. Iki AYRI saglayici
             // kullaniyoruz - tek kaynakla CDN adres degisimi yanlis alarm verir.
             if (r1.Count == 0) r1 = ResolveViaDoh(host, "https://1.1.1.1/dns-query");
             if (r2.Count == 0) r2 = ResolveViaDoh(host, "https://dns.google/resolve");
@@ -427,7 +498,8 @@ namespace Etodpx.Tune
 
         /// <summary>
         /// DNS over HTTPS ile cozumler. Bazi aglar UDP 53'u kendi DNS'i disinda
-        /// kapatir; DoH 443 uzerinden gittigi icin bu kisittan etkilenmez.
+        /// kapatir; DoH ham UDP 53 kisitindan etkilenmez, fakat DoH uc noktasi
+        /// ayrica engellenmisse bu istek yine basarisiz olabilir.
         /// Cloudflare ve Google ayni JSON bicimini donduruyor: {"Answer":[{"data":"1.2.3.4"}]}
         /// </summary>
         private static List<string> ResolveViaDoh(string host, string endpoint)
@@ -704,6 +776,36 @@ namespace Etodpx.Tune
 
         // ---------------------------------------------------------------- yardimci
 
+        /// <summary>
+        /// Arayuz uygulamayi kendisi yonettiginde ayarlayici calisan ana kopyayi
+        /// kapatmaz. Yine de baska klasorden acik bir surum varsa makine-okunur
+        /// bir kayit birakir; arayuz bunu sonucta kullaniciya gosterebilir.
+        /// </summary>
+        private static void ReportOtherCopies()
+        {
+            string dir = Path.GetDirectoryName(
+                System.Reflection.Assembly.GetExecutingAssembly().Location);
+            string expected = Path.GetFullPath(Path.Combine(dir, "etodpx.exe"));
+
+            foreach (var p in Process.GetProcessesByName("etodpx"))
+            {
+                try
+                {
+                    string actual = Path.GetFullPath(p.MainModule.FileName);
+                    if (string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)) continue;
+                    ReportOtherCopy(actual);
+                }
+                catch { }
+                finally { p.Dispose(); }
+            }
+        }
+
+        private static void ReportOtherCopy(string path)
+        {
+            WL("  DIKKAT: baska klasorden calisan etodpx: " + path);
+            WL("ETODPX_OTHER_COPY_B64=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(path)));
+        }
+
         private static bool StopRunningEtodpx()
         {
             var procs = Process.GetProcessesByName("etodpx");
@@ -742,6 +844,8 @@ namespace Etodpx.Tune
                 WL("  kopyalari silip tek klasorden calis, yoksa hangisinin");
                 WL("  ayarlandigi surekli karisir.");
                 WL();
+                foreach (var path in elsewhere)
+                    WL("ETODPX_OTHER_COPY_B64=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(path)));
             }
 
             if (matching.Count == 0) return true;
@@ -777,8 +881,16 @@ namespace Etodpx.Tune
 
         private static int Finish(int code)
         {
-            RestartEtodpxIfNeeded();
+            if (_resultCode == null) SetResult(code == 0 ? "OK" : "FAILED");
+            if (_manageApp) RestartEtodpxIfNeeded();
             return code;
+        }
+
+        private static void SetResult(string code)
+        {
+            if (_resultCode != null) return;
+            _resultCode = code;
+            WL("ETODPX_RESULT=" + code);
         }
 
         private static void RestartEtodpxIfNeeded()

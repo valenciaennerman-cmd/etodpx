@@ -27,18 +27,22 @@ namespace Etodpx.Preview
             cfg.SourcePath = null;
 
             bool pretendOn = Array.IndexOf(args, "on") >= 0;
+            bool pretendError = Array.IndexOf(args, "error") >= 0;
+            bool pretendRepair = Array.IndexOf(args, "repair") >= 0;
 
             var engine = new DpiEngine(cfg);
             var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
             var win = new MainWindow(cfg, engine);
 
-            if (pretendOn)
+            if (pretendOn || pretendError || pretendRepair)
             {
                 win.Loaded += delegate
                 {
                     win.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(delegate
                     {
-                        FakeRunningState(win, engine);
+                        if (pretendError) FakeErrorState(win);
+                        else if (pretendRepair) FakeRepairFailureState(win, engine);
+                        else FakeRunningState(win, engine);
                     }));
                 };
             }
@@ -65,6 +69,48 @@ namespace Etodpx.Preview
             catch (Exception ex)
             {
                 Console.Error.WriteLine("onizleme durumu kurulamadi: " + ex.Message);
+            }
+        }
+
+        /// <summary>Hata durumundaki duzeltme dugmesini surucuye dokunmadan gosterir.</summary>
+        private static void FakeErrorState(MainWindow win)
+        {
+            try
+            {
+                var setError = typeof(MainWindow).GetMethod("SetLastError", Hidden);
+                if (setError != null)
+                    setError.Invoke(win, new object[] {
+                        "Makinede devre dışı bırakılmış eski bir WinDivert servisi var."
+                    });
+
+                var apply = typeof(MainWindow).GetMethod("ApplyState", Hidden);
+                if (apply != null) apply.Invoke(win, null);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("hata onizlemesi kurulamadi: " + ex.Message);
+            }
+        }
+
+        private static void FakeRepairFailureState(MainWindow win, DpiEngine engine)
+        {
+            try
+            {
+                var running = typeof(DpiEngine).GetField("_running", Hidden);
+                if (running != null) running.SetValue(engine, true);
+
+                var failed = typeof(MainWindow).GetField("_repairFailed", Hidden);
+                if (failed != null) failed.SetValue(win, true);
+                var message = typeof(MainWindow).GetField("_lastRepairMessage", Hidden);
+                if (message != null)
+                    message.SetValue(win, "Otomatik düzeltme tamamlanamadı · tekrar deneyebilirsin");
+
+                var apply = typeof(MainWindow).GetMethod("ApplyState", Hidden);
+                if (apply != null) apply.Invoke(win, null);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("onarim onizlemesi kurulamadi: " + ex.Message);
             }
         }
     }

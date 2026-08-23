@@ -15,9 +15,13 @@ if (-not $Out) { $Out = Join-Path $env:TEMP ("etodpx-ui-$State.png") }
 $fw  = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319"
 $wpf = Join-Path $fw 'WPF'
 
-if (-not (Test-Path $Exe) -or
-    ((Get-ChildItem (Join-Path $Root 'src') -Recurse -Filter *.cs |
-        Measure-Object -Property LastWriteTime -Maximum).Maximum -gt (Get-Item $Exe).LastWriteTime)) {
+$sources = @(
+    Get-ChildItem (Join-Path $Root 'src') -Recurse -Filter *.cs
+    Get-Item (Join-Path $PSScriptRoot 'UiPreview.cs')
+)
+$latestSource = ($sources | Measure-Object -Property LastWriteTime -Maximum).Maximum
+
+if (-not (Test-Path $Exe) -or $latestSource -gt (Get-Item $Exe).LastWriteTime) {
 
     & "$fw\csc.exe" /nologo /target:winexe /platform:x64 /unsafe+ /optimize+ /debug- `
         /warn:3 /nowarn:1701,1702 `

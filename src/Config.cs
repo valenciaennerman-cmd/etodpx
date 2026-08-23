@@ -74,6 +74,46 @@ namespace Etodpx
             return c;
         }
 
+        /// <summary>
+        /// Ayarlayicinin diske yazdigi yeni degerleri calisan uygulamaya tasir.
+        /// Motor bu cagri sirasinda kapali tutulur; yeniden baslatildiginda ayni
+        /// Config nesnesindeki yeni degerleri kullanir.
+        /// </summary>
+        public void CopyFrom(Config other)
+        {
+            if (other == null) throw new ArgumentNullException("other");
+
+            TlsMode = other.TlsMode;
+            HttpMode = other.HttpMode;
+            QuicMode = other.QuicMode;
+            SplitPos = other.SplitPos;
+            FakeBadSum = other.FakeBadSum;
+            FakeTtl = other.FakeTtl;
+            FakeTtlValue = other.FakeTtlValue;
+            FakeWrongSeq = other.FakeWrongSeq;
+            FakeWrongSeqDelta = other.FakeWrongSeqDelta;
+            FakeCount = other.FakeCount;
+            FakeSni = other.FakeSni;
+            HttpHostCase = other.HttpHostCase;
+
+            EnableHttp = other.EnableHttp;
+            EnableTls = other.EnableTls;
+            EnableIPv6 = other.EnableIPv6;
+            SkipPrivateRanges = other.SkipPrivateRanges;
+
+            Threads = other.Threads;
+            QueueLength = other.QueueLength;
+            QueueTime = other.QueueTime;
+            QueueSize = other.QueueSize;
+            HighPriority = other.HighPriority;
+            DivertPriority = other.DivertPriority;
+
+            AutoStart = other.AutoStart;
+            MinimizeToTray = other.MinimizeToTray;
+            SourcePath = other.SourcePath;
+            Warnings = new List<string>(other.Warnings);
+        }
+
         private void Apply(string k, string v)
         {
             switch (k)

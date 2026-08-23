@@ -40,6 +40,7 @@ namespace Etodpx
                 }
 
                 string dir = AppDir();
+                if (!ValidatePackage(dir)) return 2;
                 var cfg = Config.Load(Path.Combine(dir, "etodpx.conf"));
 
                 TuneProcess(cfg);
@@ -88,6 +89,28 @@ namespace Etodpx
                 }
             }
             catch { return false; }
+        }
+
+        /// <summary>
+        /// Windows, ZIP'in icinden cift tiklanan exe'yi gecici bir klasore tek
+        /// basina kopyalayabilir. Bu durumda kullaniciya "DLL bulunamadi" demek
+        /// yerine arsivi nasil acacagini daha motor baslamadan anlatiyoruz.
+        /// </summary>
+        private static bool ValidatePackage(string dir)
+        {
+            string[] required = { "WinDivert.dll", "WinDivert64.sys" };
+            foreach (string file in required)
+            {
+                if (File.Exists(Path.Combine(dir, file))) continue;
+                MessageBox.Show(
+                    "Uygulamanın bazı dosyaları eksik görünüyor.\n\n" +
+                    "ZIP dosyasına sağ tıkla, “Tümünü ayıkla” seçeneğine bas ve " +
+                    "çıkan klasördeki etodpx.exe'yi aç. ZIP'in içinden doğrudan çalıştırma.",
+                    "etodpx - önce ZIP'i çıkar",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+            return true;
         }
 
         /// <summary>

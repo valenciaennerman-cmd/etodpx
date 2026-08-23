@@ -10,7 +10,7 @@ set "CSC=%FW%\csc.exe"
   /warn:3 /nowarn:1701,1702 ^
   /out:"bin\etodpx-selftest.exe" ^
   /main:Etodpx.Test.SelfTest ^
-  "src\Config.cs" "src\engine\*.cs" "tools\selftest\SelfTest.cs"
+  "src\Config.cs" "src\engine\*.cs" "tools\tune\Tune.cs" "tools\selftest\SelfTest.cs"
 
 if errorlevel 1 exit /b 1
 
