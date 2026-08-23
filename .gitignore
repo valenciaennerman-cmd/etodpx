@@ -27,6 +27,9 @@ bin/etodpx.conf
 assets/preview-*.png
 assets/etodpx-?.ico
 
+# Uretilen paylasim paketi ------------------------------------------------
+release/
+
 # Isletim sistemi / editor ------------------------------------------------
 Thumbs.db
 desktop.ini
