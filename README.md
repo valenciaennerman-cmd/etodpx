@@ -18,16 +18,32 @@ yönetici olarak açar. Aç, düğmeye bas, siteyi dene.
 
 **DNS'ini şimdiden değiştirme.** Gerekip gerekmediğini araç sana söyleyecek.
 
-Elle yapmak istersen:
+Gereken tek şey Windows'un kendisi — .NET SDK, Visual Studio, Node, hiçbiri
+gerekmiyor. Derleyici (`csc.exe`) Windows'la birlikte geliyor, ayrıca bir şey
+kurmuyorsun.
+
+### Hangi dosyayı ne zaman çalıştıracaksın
+
+Depoda derlenmiş `.exe` yok — kaynak kodu var, ilk çalıştırmada kendisi
+derleniyor. Karışmasın diye:
+
+| Dosya | Ne yapar | Ne zaman |
+|---|---|---|
+| **`etodpx.cmd`** | Gerekirse derler, WinDivert eksikse indirir, uygulamayı açar | **Normalde sadece buna çift tıkla.** Tek ihtiyacın olan bu. |
+| `build.cmd` | Yalnızca derler, hiçbir şey açmaz | Kaynak kodu değiştirdiysen |
+| `tools\setup-windivert.cmd` | Sürücüyü indirir | `etodpx.cmd` zaten çağırıyor; elle kurmak istersen |
+| `bin\etodpx-tune.exe` | Hattına uyan ayarı ölçerek bulur | Bir site açılmıyorsa |
+| `tools\test\test-all.cmd` | 174 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
+
+Yani sıradan bir kullanıcı için tek adım var:
 
 ```bat
-build.cmd
-tools\setup-windivert.cmd
-bin\etodpx.exe
+etodpx.cmd
 ```
 
-Gereken tek şey Windows'un kendisi — .NET SDK, Visual Studio, Node, hiçbiri
-gerekmiyor. Derleyici (`csc.exe`) Windows ile birlikte geliyor.
+İlk çalıştırma birkaç saniye sürer (derleme + sürücü indirme), sonrakiler anında
+açılır. Uygulama yönetici izni ister — WinDivert bir çekirdek sürücüsü, onsuz
+paket yakalanamaz.
 
 
 ### Site hâlâ açılmıyorsa

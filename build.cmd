@@ -72,10 +72,13 @@ if not exist "bin\etodpx.conf" copy /y "etodpx.conf" "bin\etodpx.conf" >nul
 
 echo.
 echo   TAMAM  ^-^>  bin\etodpx.exe
-if not exist "bin\WinDivert.dll" (
+set "WDMISS="
+if not exist "bin\WinDivert.dll" set "WDMISS=1"
+if not exist "bin\WinDivert64.sys" set "WDMISS=1"
+if defined WDMISS (
   echo.
-  echo   NOT: bin\WinDivert.dll eksik. Calistirmadan once
-  echo        tools\setup-windivert.cmd dosyasini calistirin.
+  echo   NOT: WinDivert dosyalari eksik ^(WinDivert.dll ve WinDivert64.sys^).
+  echo        Calistirmadan once tools\setup-windivert.cmd dosyasini calistirin.
 )
 echo.
 endlocal
