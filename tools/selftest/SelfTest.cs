@@ -76,6 +76,19 @@ namespace Etodpx.Test
                 "bilinen IPv6 engel sayfasi yakalaniyor");
             Check(!Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("1.1.1.1")),
                 "normal DNS adresi zehirli sayilmiyor");
+
+            // Tarama erken cikisi. Yanlis tarafa kayan bir esik CALISAN bir
+            // stratejiyi eler ve kullanici bosuna "asilamiyor" cevabi alir.
+            Check(!Tuner.CannotWin(0, 2, 1),
+                "kalan denemeler en iyiyi gecebiliyorsa tarama surduruluyor");
+            Check(Tuner.CannotWin(0, 1, 1),
+                "kalan denemeler en iyiye ancak esitleniyorsa tarama kesiliyor");
+            Check(!Tuner.CannotWin(2, 0, 1),
+                "en iyiyi zaten gecmis strateji kesilmiyor");
+            Check(!Tuner.CannotWin(0, 3, 0),
+                "temel puan sifirken hicbir strateji pesinen elenmiyor");
+            Check(!Tuner.CannotWin(0, 0, -1),
+                "-1 esigi verildiginde hic vazgecilmiyor (temel olcum ve dogrulama)");
         }
 
         // -------------------------------------------------------------- interop

@@ -61,7 +61,13 @@ namespace Etodpx.Tune
     internal static class Tuner
     {
         private static string[] _targets;
+        // Dogrulama derinligi: kazanan ayar bu kadar denemeyi gecmek zorunda.
         private const int TriesPerTarget = 3;
+        // Tarama derinligi. 31 strateji x hedef x deneme el sikismasi demek ve
+        // BASARISIZ bir el sikismasi zaman asimina kadar (~4 sn) suruyor - yani
+        // sureyi belirleyen sey calismayan stratejiler. Tarama tek denemeyle
+        // genis gecer, yalnizca kazanan aday tam derinlikte dogrulanir.
+        private const int ScanTries = 1;
         private static bool _auto;
         private static bool _manageApp = true;
         private static bool _etodpxWasRunning;
@@ -85,7 +91,7 @@ namespace Etodpx.Tune
                 else rest.Add(a);
             }
             if (rest.Count == 0)
-                rest.AddRange(new[] { "discord.com", "cdn.discordapp.com", "x.com" });
+                rest.AddRange(new[] { "discord.com", "cdn.discordapp.com", "x.com", "roblox.com" });
 
             // Kullanici tam adres yapistirabilir; alan adini ayikla.
             var cleaned = new List<string>();
@@ -135,8 +141,10 @@ namespace Etodpx.Tune
             WL("  Once etodpx KAPALI iken olcum aliniyor...");
             WL();
 
-            int baseline = RunTests();
-            int total = _targets.Length * TriesPerTarget;
+            bool ignoredAbort;
+            int total = _targets.Length * ScanTries;
+            int confirmTotal = _targets.Length * TriesPerTarget;
+            int baseline = RunTests(ScanTries, -1, out ignoredAbort);
             WL("  temel durum (koruma yok) : " + baseline + "/" + total);
             WL();
 
@@ -152,29 +160,60 @@ namespace Etodpx.Tune
             }
 
             var results = new List<KeyValuePair<Strategy, int>>();
+            var cutShort = new List<Strategy>();
+            var rejected = new List<Strategy>();
             Strategy best = null;
             int bestScore = baseline;
+            bool confirmed = false;
 
             foreach (var s in strategies)
             {
                 W(("  " + s.Name).PadRight(42));
-                int score = TryStrategy(s);
+                bool stopped;
+                int score = TryStrategy(s, ScanTries, bestScore, out stopped);
+                if (stopped) cutShort.Add(s);
                 results.Add(new KeyValuePair<Strategy, int>(s, score));
 
                 string bar = new string('#', score) + new string('.', total - score);
-                WL(bar + "  " + score + "/" + total);
-
-                if (score > bestScore) { bestScore = score; best = s; }
+                WL(bar + "  " + score + "/" + total +
+                   (stopped ? "  (erken kesildi)" : string.Empty));
                 FlushLog();                              // ilerleme disaridan izlenebilsin
 
+                if (score > bestScore) { bestScore = score; best = s; }
+
                 // Stratejiler en guvenliden daha agresife dogru sirali. Bir
-                // strateji tum denemeleri gecince daha riskli 30 secenegi bosuna
-                // taramak yalnizca kullaniciyi bekletir.
-                if (score == total)
+                // strateji tum hedefleri acinca daha riskli olanlari taramak
+                // yalnizca kullaniciyi bekletir - ama once dogrula.
+                if (score != total) continue;
+
+                if (Confirm(s, confirmTotal) == confirmTotal)
                 {
-                    WL("  Tam uyum bulundu; kalan denemeler atlandi.");
+                    confirmed = true;
+                    WL("  Tam uyum dogrulandi; kalan denemeler atlandi.");
                     break;
                 }
+
+                // Dogrulamayi gecemedi: taramadaki tam puan sansliydi.
+                // Kazanan sayilmasin, en iyiyi kalanlardan yeniden sec.
+                WL("  Dogrulama gecmedi; taramaya devam ediliyor.");
+                rejected.Add(s);
+                best = null;
+                bestScore = baseline;
+                foreach (var kv in results)
+                {
+                    if (rejected.Contains(kv.Key)) continue;
+                    if (kv.Value > bestScore) { bestScore = kv.Value; best = kv.Key; }
+                }
+            }
+
+            // Liste erken cikisla degil sonuna kadar taranarak bittiyse kazanan
+            // henuz tam derinlikte olculmedi. Yarim yamalak calisan bir ayari
+            // yazmamak icin burada da dogruluyoruz: dogrulama puani en az
+            // yarisi olmali, yoksa strateji sayilmaz.
+            if (best != null && !confirmed && Confirm(best, confirmTotal) * 2 <= confirmTotal)
+            {
+                WL("  Kazanan aday dogrulamayi gecemedi.");
+                best = null;
             }
 
             WL();
@@ -189,14 +228,30 @@ namespace Etodpx.Tune
                 if (c != 0) return c;
                 return strategies.IndexOf(a.Key).CompareTo(strategies.IndexOf(b.Key));
             });
+            // Erken kesilen stratejinin puani bir ALT SINIRDIR - gercek degeri
+            // olculmedi. Raporu okuyan bunu bilmeli, yoksa sayilar oldugundan
+            // kotu gorunur.
             foreach (var kv in results)
-                WL("   " + kv.Value + "/" + total + "  " + kv.Key.Name);
+                WL("   " + (cutShort.Contains(kv.Key) ? "<" : " ") + kv.Value + "/" + total +
+                   "  " + kv.Key.Name + (rejected.Contains(kv.Key) ? "  (dogrulama gecmedi)" : string.Empty));
+            if (cutShort.Count > 0)
+                WL("   ( < : kazanani gecemeyecegi anlasilinca kesildi )");
             WL();
 
             if (best == null)
             {
-                WL("  Hicbir strateji temel durumu gecemedi.");
-                WL("  Bu hedef muhtemelen IP seviyesinde engelli; DPI atlatma yetmez.");
+                if (rejected.Count > 0)
+                {
+                    // Baska bir durum: strateji taramada acti ama tekrarinda
+                    // acmadi. Bunu "IP engeli" diye raporlamak yanlis olur.
+                    WL("  Bazi stratejiler taramada acti ama tekrar olcumde tutmadi.");
+                    WL("  Baglanti kararsiz olabilir; araci bir kez daha calistir.");
+                }
+                else
+                {
+                    WL("  Hicbir strateji temel durumu gecemedi.");
+                    WL("  Bu hedef muhtemelen IP seviyesinde engelli; DPI atlatma yetmez.");
+                }
                 WL();
                 SetResult("NO_STRATEGY");
                 Pause();
@@ -284,6 +339,7 @@ namespace Etodpx.Tune
             bool anyOpen = false;
             bool anyNoDns = false;
             bool anyIpBlocked = false;
+            var scanTargets = new List<string>();
             _dnsPoisoned = false;
             _dnsCompareFailed = false;
             _dnsResolutionFailed = false;
@@ -319,10 +375,12 @@ namespace Etodpx.Tune
                     case Diag.SniBlocked:
                         msg = "SNI engeli - etodpx bunu asabilir";
                         anySni = true;
+                        scanTargets.Add(host);
                         break;
                     default:
                         msg = "sunucuya ulasiliyor ama TLS kurulamiyor (sebep belirsiz)";
                         anySni = true;   // yine de denemeye deger
+                        scanTargets.Add(host);
                         break;
                 }
                 WL(("  " + host).PadRight(32) + msg);
@@ -393,6 +451,19 @@ namespace Etodpx.Tune
                 else if (anyIpBlocked) SetResult("IP_BLOCKED");
                 else SetResult("NO_SNI");
                 return false;
+            }
+
+            // Tarama yalnizca DPI ile asilabilecek hedefler uzerinden yapilir.
+            // Zaten acilan bir hedef her stratejide basarili olup puani sabit
+            // sisirir. IP seviyesinde engelli olan ise hicbir stratejide
+            // acilmaz; tam puan asla yakalanamaz, erken cikis hic devreye
+            // girmez ve 31 stratejinin tamami bosuna taranir.
+            if (scanTargets.Count != _targets.Length)
+            {
+                WL("  Taranacak hedefler : " + string.Join(", ", scanTargets.ToArray()));
+                WL("  (digerleri DPI ile asilabilir cinsten degil, olcume katilmiyor)");
+                WL();
+                _targets = scanTargets.ToArray();
             }
             return true;
         }
@@ -696,8 +767,38 @@ namespace Etodpx.Tune
             return l;
         }
 
-        private static int TryStrategy(Strategy s)
+        /// <summary>
+        /// Kalan denemelerin hepsi gecse bile <paramref name="bestScore"/>
+        /// asilamiyorsa bu strateji kazanamaz. Kazanmak icin puanin en iyiyi
+        /// GECMESI gerekir; esitlik yetmez, o yuzden karsilastirma "&lt;=".
+        /// <para>Ayri bir metot cunku buradaki bir off-by-one calisan bir
+        /// stratejiyi sessizce eler ve kullaniciya "engel asilamiyor" dedirtir
+        /// - fark edilmesi zor, sonucu buyuk bir hata. Testle korunuyor.</para>
+        /// </summary>
+        internal static bool CannotWin(int ok, int remaining, int bestScore)
         {
+            return ok + remaining <= bestScore;
+        }
+
+        /// <summary>
+        /// Kazanan adayini tam derinlikte yeniden olcer. Tarama hedef basina tek
+        /// deneme yaptigi icin tek bir sansli el sikismasi calismayan bir
+        /// stratejiyi kazanan gosterebilir; yazilacak ayar bu kontrolden
+        /// gecmek zorunda.
+        /// </summary>
+        private static int Confirm(Strategy s, int confirmTotal)
+        {
+            W("  dogrulaniyor".PadRight(42));
+            bool ignored;
+            int score = TryStrategy(s, TriesPerTarget, -1, out ignored);
+            WL(score + "/" + confirmTotal);
+            FlushLog();
+            return score;
+        }
+
+        private static int TryStrategy(Strategy s, int tries, int giveUpAtOrBelow, out bool aborted)
+        {
+            aborted = false;
             var cfg = new Config();
             cfg.QuicMode = "drop";        // olcum sirasinda QUIC yolu devre disi kalsin
             cfg.Threads = 2;
@@ -708,7 +809,7 @@ namespace Etodpx.Tune
             {
                 eng.Start();
                 Thread.Sleep(250);        // surucu otursun
-                return RunTests();
+                return RunTests(tries, giveUpAtOrBelow, out aborted);
             }
             catch (Exception ex)
             {
@@ -724,12 +825,27 @@ namespace Etodpx.Tune
 
         // ------------------------------------------------------------------ test
 
-        private static int RunTests()
+        /// <summary>
+        /// Hedeflere sirayla baglanir.
+        /// <para><paramref name="giveUpAtOrBelow"/>: o ana kadarki en iyi puan.
+        /// Kalan denemelerin hepsi gecse bile bu puan asilamiyorsa strateji
+        /// kazanamaz; devam etmek sonucu degistirmez, yalnizca bekletir.
+        /// Basarisiz bir el sikismasi zaman asimina kadar surdugu icin bu
+        /// erken cikis olculebilir zaman kazandirir. -1 verilirse hic
+        /// vazgecilmez - temel olcum ve dogrulama icin sart.</para>
+        /// </summary>
+        private static int RunTests(int tries, int giveUpAtOrBelow, out bool aborted)
         {
+            aborted = false;
             int ok = 0;
+            int remaining = _targets.Length * tries;
             foreach (string host in _targets)
-                for (int i = 0; i < TriesPerTarget; i++)
+                for (int i = 0; i < tries; i++)
+                {
                     if (Handshake(host)) ok++;
+                    remaining--;
+                    if (CannotWin(ok, remaining, giveUpAtOrBelow)) { aborted = true; return ok; }
+                }
             return ok;
         }
 

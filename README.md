@@ -258,6 +258,8 @@ bin\etodpx-tune.exe acilmayansite.com
 ```
 
 Buraya **açılmayan sitenin gerçek adresini** yaz — `discord.com`, `x.com` gibi.
+Hiç adres vermezsen `discord.com`, `cdn.discordapp.com`, `x.com` ve `roblox.com`
+üzerinden ölçer.
 
 Araç önce engelin cinsini teşhis eder:
 
@@ -272,6 +274,25 @@ Sadece son durumda 31 stratejiyi tek tek dener. Her biriyle gerçek TLS el
 sıkışması yapar (sertifika doğrulaması **açık** — engel sayfası başarı
 sayılmaz), sıralamayı gösterir ve kazananı `etodpx.conf` dosyasına yazar.
 Çalışan etodpx varsa ölçüm için durdurur; bitince yeniden başlat.
+
+Süreyi belirleyen şey **çalışmayan** stratejiler: başarısız bir el sıkışması
+zaman aşımına kadar (~4 sn) sürer, başarılı olan anında biter. Tarama bu yüzden
+üç yerden kısaltılıyor:
+
+- **Ölçüye yalnızca aşılabilir hedefler girer.** Zaten açılan bir hedef her
+  stratejide başarılı olup puanı sabit şişirir. IP seviyesinde engelli olan ise
+  hiçbirinde açılmaz — tam puan asla yakalanamayacağı için erken çıkış hiç
+  devreye girmez ve 31 stratejinin tamamı boşuna taranır.
+- **Kazananı geçemeyeceği anlaşılan strateji kesilir.** Kalan denemelerin hepsi
+  geçse bile en iyi puan aşılamıyorsa devam etmek sonucu değiştirmez.
+- **Tarama hedef başına tek deneme yapar; kazanan tam derinlikte doğrulanır.**
+  Tek şanslı bir el sıkışması yanlış ayar yazdırmasın diye. Doğrulamayı
+  geçemeyen aday elenir ve tarama kaldığı yerden sürer.
+
+Gerçek bir ölçümde (Türk Telekom hattı, 4 hedef, kazanan 20. sırada bulundu) bu
+üçü birlikte el sıkışma sayısını **252'den 54'e** indirdi: `x.com` o hatta zaten
+açık olduğu için ölçüye girmedi, taranan 31 stratejinin 18'i ikinci başarısız
+denemede kesildi, kazanan ise tam derinlikte 9/9 doğrulandı.
 
 Gerçek bir çıktı (Türk Telekom hattı, hedef discord.com):
 
