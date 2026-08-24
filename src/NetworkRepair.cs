@@ -16,6 +16,7 @@ namespace Etodpx
         public int InterfaceIndex;
         public string InterfaceAlias;
         public string[] Servers;
+        public bool WasDhcp;
         public string FilePath;
     }
 
@@ -40,11 +41,19 @@ namespace Etodpx
                 "};" +
                 "$best=$items|Sort-Object @{Expression={if($_.Hardware){0}else{1}}},Metric|Select-Object -First 1;" +
                 "if(-not $best){throw 'Aktif internet baglantisi bulunamadi'};" +
+                "$adapter=Get-NetAdapter -InterfaceIndex $best.Index -ErrorAction Stop;" +
                 "$dns=@(Get-DnsClientServerAddress -InterfaceIndex $best.Index|" +
                 " ForEach-Object {$_.ServerAddresses}|Where-Object {$_});" +
+                "$g='{'+$adapter.InterfaceGuid.ToString()+'}';" +
+                "$k4='HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\'+$g;" +
+                "$k6='HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip6\\Parameters\\Interfaces\\'+$g;" +
+                "$n4=[string](Get-ItemProperty -Path $k4 -Name NameServer -ErrorAction SilentlyContinue).NameServer;" +
+                "$n6=[string](Get-ItemProperty -Path $k6 -Name NameServer -ErrorAction SilentlyContinue).NameServer;" +
+                "$dhcp=if([string]::IsNullOrWhiteSpace($n4)-and[string]::IsNullOrWhiteSpace($n6)){'1'}else{'0'};" +
                 "$enc=[Text.Encoding]::UTF8;" +
                 "'ETODPX_INDEX='+$best.Index;" +
                 "'ETODPX_ALIAS_B64='+[Convert]::ToBase64String($enc.GetBytes($best.Alias));" +
+                "'ETODPX_WAS_DHCP='+$dhcp;" +
                 "'ETODPX_SERVERS_B64='+[Convert]::ToBase64String($enc.GetBytes(($dns -join \"`n\")))";
 
             ProcessResult run = RunPowerShell(script);
@@ -78,6 +87,7 @@ namespace Etodpx
                     InterfaceIndex = index,
                     InterfaceAlias = alias,
                     Servers = servers,
+                    WasDhcp = Marker(run.Output, "ETODPX_WAS_DHCP") == "1",
                     FilePath = path
                 };
                 SaveBackup(backup);
@@ -135,7 +145,7 @@ namespace Etodpx
             }
 
             string set;
-            if (backup.Servers == null || backup.Servers.Length == 0)
+            if (backup.WasDhcp || backup.Servers == null || backup.Servers.Length == 0)
             {
                 set = "Set-DnsClientServerAddress -InterfaceIndex " + backup.InterfaceIndex +
                       " -ResetServerAddresses;";
@@ -163,6 +173,7 @@ namespace Etodpx
                 "# etodpx DNS geri alma noktasi",
                 "interface_index=" + backup.InterfaceIndex,
                 "interface_alias_b64=" + Encode(backup.InterfaceAlias ?? string.Empty),
+                "was_dhcp=" + (backup.WasDhcp ? "true" : "false"),
                 "servers_b64=" + Encode(string.Join("\n", backup.Servers ?? new string[0]))
             };
             File.WriteAllLines(backup.FilePath, lines, new UTF8Encoding(false));
@@ -175,6 +186,7 @@ namespace Etodpx
             {
                 int index = 0;
                 string alias = string.Empty, servers = string.Empty;
+                bool wasDhcp = false;
                 foreach (string raw in File.ReadAllLines(path))
                 {
                     int eq = raw.IndexOf('=');
@@ -183,6 +195,7 @@ namespace Etodpx
                     string value = raw.Substring(eq + 1).Trim();
                     if (key == "interface_index") int.TryParse(value, out index);
                     else if (key == "interface_alias_b64") alias = Decode(value);
+                    else if (key == "was_dhcp") bool.TryParse(value, out wasDhcp);
                     else if (key == "servers_b64") servers = Decode(value);
                 }
                 if (index <= 0) return null;
@@ -190,6 +203,7 @@ namespace Etodpx
                 {
                     InterfaceIndex = index,
                     InterfaceAlias = alias,
+                    WasDhcp = wasDhcp,
                     Servers = servers.Length == 0
                         ? new string[0]
                         : servers.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries),
