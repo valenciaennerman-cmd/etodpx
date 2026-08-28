@@ -1,12 +1,11 @@
-﻿// etodpx - otomatik strateji bulucu
+﻿// Otomatik strateji bulucu.
 //
-// DPI kutulari operatore, sehre, hatta abonelik tipine gore farkli davranir.
-// "Dogru" ayar yoktur; sadece SENIN hattinda calisan ayar vardir.
-// Bu arac stratejileri tek tek deneyip her biriyle gercek TLS el sikismasi
-// yapar (sertifika dogrulamasi ACIK - engel sayfasi basari sayilmaz) ve
-// kazanani etodpx.conf dosyasina yazar.
+// DPI kutulari operatore, sehre, hatta abonelik tipine gore farkli davraniyor;
+// evrensel bir "dogru ayar" yok. Bu arac stratejileri tek tek deneyip her
+// biriyle gercek TLS el sikismasi yapiyor (sertifika dogrulamasi acik, yani
+// engel sayfasi basari sayilmiyor) ve kazanani etodpx.conf'a yaziyor.
 //
-// Yonetici olarak calistirilmali. Calisan etodpx varsa once durdurulur.
+// Yonetici gerekiyor. Calisan etodpx varsa once durduruluyor.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -63,10 +62,9 @@ namespace Etodpx.Tune
         private static string[] _targets;
         // Dogrulama derinligi: kazanan ayar bu kadar denemeyi gecmek zorunda.
         private const int TriesPerTarget = 3;
-        // Tarama derinligi. 31 strateji x hedef x deneme el sikismasi demek ve
-        // BASARISIZ bir el sikismasi zaman asimina kadar (~4 sn) suruyor - yani
-        // sureyi belirleyen sey calismayan stratejiler. Tarama tek denemeyle
-        // genis gecer, yalnizca kazanan aday tam derinlikte dogrulanir.
+        // Tarama derinligi. Sureyi belirleyen sey calismayan stratejiler: basarisiz
+        // bir el sikismasi zaman asimina kadar (~4 sn) suruyor. Tarama tek denemeyle
+        // genis geciyor, yalnizca kazanan aday tam derinlikte dogrulaniyor.
         private const int ScanTries = 1;
         private static bool _auto;
         private static bool _manageApp = true;
@@ -181,9 +179,8 @@ namespace Etodpx.Tune
 
                 if (score > bestScore) { bestScore = score; best = s; }
 
-                // Stratejiler en guvenliden daha agresife dogru sirali. Bir
-                // strateji tum hedefleri acinca daha riskli olanlari taramak
-                // yalnizca kullaniciyi bekletir - ama once dogrula.
+                // Liste en guvenliden agresife sirali; bir strateji tum hedefleri
+                // acinca gerisini taramak sadece bekletir. Ama once dogrula.
                 if (score != total) continue;
 
                 if (Confirm(s, confirmTotal) == confirmTotal)
@@ -193,8 +190,7 @@ namespace Etodpx.Tune
                     break;
                 }
 
-                // Dogrulamayi gecemedi: taramadaki tam puan sansliydi.
-                // Kazanan sayilmasin, en iyiyi kalanlardan yeniden sec.
+                // Taramadaki tam puan sansliymis; en iyiyi kalanlardan yeniden sec.
                 WL("  Dogrulama gecmedi; taramaya devam ediliyor.");
                 rejected.Add(s);
                 best = null;
@@ -206,10 +202,8 @@ namespace Etodpx.Tune
                 }
             }
 
-            // Liste erken cikisla degil sonuna kadar taranarak bittiyse kazanan
-            // henuz tam derinlikte olculmedi. Yarim yamalak calisan bir ayari
-            // yazmamak icin burada da dogruluyoruz: dogrulama puani en az
-            // yarisi olmali, yoksa strateji sayilmaz.
+            // Liste sonuna kadar tarandiysa kazanan henuz tam derinlikte olculmedi.
+            // Yarim yamalak calisan bir ayari yazmamak icin burada da dogruluyoruz.
             if (best != null && !confirmed && Confirm(best, confirmTotal) * 2 <= confirmTotal)
             {
                 WL("  Kazanan aday dogrulamayi gecemedi.");
@@ -218,19 +212,16 @@ namespace Etodpx.Tune
 
             WL();
             WL("  --- siralama (esitlikte en guvenli once) ---");
-            // Esit puanlilarda deneme sirasi belirleyicidir: liste sahte paketi
-            // sunucuya ULASTIRAMAYACAK yontemlerden baslar, TTL'ler en dusukten
-            // artar. Secim de bunu izler (ilk zirveye ulasan kazanir), o yuzden
-            // gosterim ayni sirayi kullanmali - yoksa kazanan yanlis gorunur.
+            // Esitlikte deneme sirasi belirleyici: liste sahte paketi sunucuya
+            // ulastiramayacak yontemlerden basliyor, TTL'ler en dusukten artiyor.
+            // Secim de bunu izliyor, gosterim de ayni sirayi kullanmali.
             results.Sort(delegate (KeyValuePair<Strategy, int> a, KeyValuePair<Strategy, int> b)
             {
                 int c = b.Value.CompareTo(a.Value);
                 if (c != 0) return c;
                 return strategies.IndexOf(a.Key).CompareTo(strategies.IndexOf(b.Key));
             });
-            // Erken kesilen stratejinin puani bir ALT SINIRDIR - gercek degeri
-            // olculmedi. Raporu okuyan bunu bilmeli, yoksa sayilar oldugundan
-            // kotu gorunur.
+            // Erken kesilenin puani bir alt sinir; gercek degeri olculmedi.
             foreach (var kv in results)
                 WL("   " + (cutShort.Contains(kv.Key) ? "<" : " ") + kv.Value + "/" + total +
                    "  " + kv.Key.Name + (rejected.Contains(kv.Key) ? "  (dogrulama gecmedi)" : string.Empty));
@@ -242,8 +233,8 @@ namespace Etodpx.Tune
             {
                 if (rejected.Count > 0)
                 {
-                    // Baska bir durum: strateji taramada acti ama tekrarinda
-                    // acmadi. Bunu "IP engeli" diye raporlamak yanlis olur.
+                    // Taramada acti, tekrarinda acmadi. Bunu IP engeli diye
+                    // raporlamak yanlis olur.
                     WL("  Bazi stratejiler taramada acti ama tekrar olcumde tutmadi.");
                     WL("  Baglanti kararsiz olabilir; araci bir kez daha calistir.");
                 }
@@ -286,10 +277,8 @@ namespace Etodpx.Tune
             return Finish(0);
         }
 
-        /// <summary>
-        /// "https://www.site.com/a/b?x=1" -> "www.site.com"
-        /// Sema, kullanici bilgisi, port, yol ve parca atilir.
-        /// </summary>
+        // "https://www.site.com/a/b?x=1" -> "www.site.com"
+
         internal static string ToHostName(string raw)
         {
             if (string.IsNullOrEmpty(raw)) return string.Empty;
@@ -300,8 +289,8 @@ namespace Etodpx.Tune
 
             int cut = t.IndexOfAny(new[] { '/', '?', '#', (char)92 });   // 92 = ters boluk
             int at = t.IndexOf('@');                  // kullanici:parola@
-            // @ yalnizca adresin authority bolumundeyse kullanici bilgisidir.
-            // /channels/@me gibi bir yol parcasi alan adini "me"ye cevirmemeli.
+            // @ yalnizca authority bolumundeyse kullanici bilgisi; /channels/@me
+            // gibi bir yol parcasi alan adini "me"ye cevirmemeli.
             if (at >= 0 && (cut < 0 || at < cut))
             {
                 t = t.Substring(at + 1);
@@ -316,22 +305,20 @@ namespace Etodpx.Tune
                 if (close > 0) return t.Substring(1, close - 1);
             }
 
-            // Port ancak TEK bir iki nokta varsa kirpilir; birden fazlaysa
-            // koseli parantezsiz bir IPv6 adresidir ve kirpmak onu bozar.
+            // Port ancak tek iki nokta varsa kirpilir; birden fazlaysa koseli
+            // parantezsiz bir IPv6 adresidir ve kirpmak onu bozar.
             int first = t.IndexOf(':');
             if (first > 0 && first == t.LastIndexOf(':')) t = t.Substring(0, first);
 
             return t.Trim().TrimEnd('.').ToLowerInvariant();
         }
 
-        // ---------------------------------------------------------- on teshis
+        // --- on teshis
 
         private enum Diag { Open, NoDns, DnsPoisoned, IpBlocked, SniBlocked, Unreachable }
 
-        /// <summary>
-        /// Taramadan once engelin CINSINI belirler. etodpx yalnizca SNI engelini
-        /// asabilir; DNS ya da IP engelinde 31 strateji denemenin anlami yok.
-        /// </summary>
+        // Engelin cinsini belirler. etodpx yalnizca SNI engelini asabiliyor; DNS
+        // ya da IP engelinde butun stratejileri denemenin anlami yok.
         private static bool Preflight()
         {
             WL("  --- on teshis ---");
@@ -361,10 +348,9 @@ namespace Etodpx.Tune
                         msg = "DNS ZEHIRLI - once DNS'i duzelt, etodpx bunu asamaz";
                         break;
                     case Diag.IpBlocked:
-                        // DNS karsilastirmasi yapilamadiysa bu teshis GUVENILMEZ:
-                        // sistem DNS'i sahte bir adres vermis olabilir ve TCP o
-                        // yuzden kurulmuyordur. Bunu gizlemek kullaniciyi "VPN
-                        // sart" sonucuna yanlis yonlendirir.
+                        // DNS karsilastirmasi yapilamadiysa bu teshis guvenilmez:
+                        // sistem DNS'i sahte adres vermis olabilir ve TCP o yuzden
+                        // kurulmuyordur. Gizlersek kullanici bosuna VPN arar.
                         msg = _dnsCompareFailed
                             ? "TCP baglantisi kurulmuyor - AMA DNS dogrulanamadi (asagiya bak)"
                             : "IP seviyesinde engel - TCP baglantisi bile kurulmuyor, etodpx asamaz";
@@ -385,7 +371,7 @@ namespace Etodpx.Tune
                 }
                 WL(("  " + host).PadRight(32) + msg);
 
-                // Cozumlenen adresi de yaz: teshisin dayanagini kullanici gorsun.
+                // Teshisin dayanagini kullanici gorsun.
                 try
                 {
                     var ips = System.Net.Dns.GetHostAddresses(host);
@@ -453,11 +439,11 @@ namespace Etodpx.Tune
                 return false;
             }
 
-            // Tarama yalnizca DPI ile asilabilecek hedefler uzerinden yapilir.
-            // Zaten acilan bir hedef her stratejide basarili olup puani sabit
-            // sisirir. IP seviyesinde engelli olan ise hicbir stratejide
-            // acilmaz; tam puan asla yakalanamaz, erken cikis hic devreye
-            // girmez ve 31 stratejinin tamami bosuna taranir.
+            // Tarama yalnizca DPI ile asilabilecek hedefler uzerinden yapiliyor.
+            // Zaten acilan hedef her stratejide basarili olup puani sisiriyor;
+            // IP seviyesinde engelli olan ise hicbirinde acilmadigi icin tam puan
+            // asla yakalanmiyor, erken cikis devreye girmiyor ve butun liste
+            // bosuna taraniyor.
             if (scanTargets.Count != _targets.Length)
             {
                 WL("  Taranacak hedefler : " + string.Join(", ", scanTargets.ToArray()));
@@ -481,9 +467,8 @@ namespace Etodpx.Tune
             }
             catch
             {
-                // Sistem DNS'i tamamen olu olabilir. En az bir bagimsiz DoH
-                // cevabi kaydin gercekte var oldugunu kanitlar; bunu "yazim
-                // hatasi" diye raporlamak kullaniciyi yanlis yere yollar.
+                // Sistem DNS'i tamamen olu olabilir. Bagimsiz bir DoH cevabi kaydin
+                // gercekten var oldugunu gosterir; buna "yazim hatasi" demek yanlis.
                 var independent = ResolveViaDoh(host, "https://1.1.1.1/dns-query");
                 if (independent.Count > 0) _dnsResolutionFailed = true;
                 else _dnsCompareFailed = true;
@@ -493,36 +478,20 @@ namespace Etodpx.Tune
             foreach (var ip in ips)
                 if (IsKnownPoisonAddress(ip)) return Diag.DnsPoisoned;
 
-            // Sistem DNS'i ile bagimsiz bir cozumleyiciyi karsilastir. Ortak tek bir
-            // adres bile yoksa sistem DNS'i sahte cevap donduruyor demektir - bu
+            // Olcutun tamami IsDnsPoisoned icinde.
             if (IsDnsPoisoned(host, ips)) return Diag.DnsPoisoned;
 
             if (!CanConnect(host)) return Diag.IpBlocked;
             if (Handshake(host)) return Diag.Open;
 
-            // Ayni sunucuya zararsiz bir SNI ile ulasilabiliyorsa yol acik demektir;
-            // engelin tek dayanagi alan adi metnidir.
+            // Ayni sunucuya zararsiz bir SNI ile ulasiliyorsa engelin tek dayanagi
+            // alan adi metnidir.
             if (HandshakeWithSni(ips[0].ToString(), "example.com")) return Diag.SniBlocked;
             return Diag.Unreachable;
         }
 
-        /// <summary>
-        /// Sistem DNS'i sahte cevap mi donduruyor?
-        ///
-        /// Tek bir referansla karsilastirmak YANILTICI olur: CDN'ler her
-        /// cozumleyiciye havuzdan farkli adresler dondurebilir ve bu masum fark
-        /// "zehirli" gibi gorunur. Bu yuzden IKI bagimsiz referans sorulur ve
-        /// yalnizca su durumda bayrak kaldirilir:
-        ///   - iki referans birbiriyle ortak adres veriyor (yani adres kararli), VE
-        ///   - sistem DNS'inin verdigi adreslerin hicbiri o kumede degil.
-        /// Referanslar birbirini tutmuyorsa alan adi zaten degisken demektir ve
-        /// hicbir sey iddia edilmez.
-        /// </summary>
-        /// <summary>
-        /// Referans cozumleyicilere hic ulasilamadi mi? Bazi aglar UDP 53'u kendi
-        /// DNS'i disinda kapatir; o zaman karsilastirma yapilamaz ve "zehirli
-        /// degil" demek YANLIS olur. Bu bayrak teshiste ayrica belirtilir.
-        /// </summary>
+        // Referans cozumleyicilere hic ulasilamadi mi. Bazi aglar UDP 53'u kendi
+        // DNS'i disinda kapatiyor; o zaman "zehirli degil" demek yanlis olur.
         private static bool _dnsCompareFailed;
 
         internal static bool IsKnownPoisonAddress(System.Net.IPAddress ip)
@@ -533,14 +502,18 @@ namespace Etodpx.Tune
                    value == "0.0.0.0" || value == "::";
         }
 
+        // Tek referansla karsilastirmak yaniltici: CDN'ler her cozumleyiciye
+        // havuzdan farkli adres dondurebiliyor ve bu masum fark zehirli gibi
+        // gorunuyor. Iki bagimsiz referans soruluyor, bayrak yalnizca ikisi
+        // birbiriyle ortak adres veriyorsa VE sistemin verdigi adreslerin hicbiri
+        // o kumede degilse kalkiyor. Referanslar tutmuyorsa bir sey iddia etmiyoruz.
         private static bool IsDnsPoisoned(string host, System.Net.IPAddress[] systemIps)
         {
             var r1 = ResolveVia("1.1.1.1", host);
             var r2 = ResolveVia("8.8.8.8", host);
 
-            // UDP 53 kapaliysa DoH'a dus. DoH da ag tarafindan engellenebilir;
-            // bu yuzden basarisizlik "DNS temiz" sayilmaz. Iki AYRI saglayici
-            // kullaniyoruz - tek kaynakla CDN adres degisimi yanlis alarm verir.
+            // UDP 53 kapaliysa DoH'a dus. DoH de engellenebilir, o yuzden
+            // basarisizlik "DNS temiz" demek degil.
             if (r1.Count == 0) r1 = ResolveViaDoh(host, "https://1.1.1.1/dns-query");
             if (r2.Count == 0) r2 = ResolveViaDoh(host, "https://dns.google/resolve");
 
@@ -567,12 +540,8 @@ namespace Etodpx.Tune
             return true;
         }
 
-        /// <summary>
-        /// DNS over HTTPS ile cozumler. Bazi aglar UDP 53'u kendi DNS'i disinda
-        /// kapatir; DoH ham UDP 53 kisitindan etkilenmez, fakat DoH uc noktasi
-        /// ayrica engellenmisse bu istek yine basarisiz olabilir.
-        /// Cloudflare ve Google ayni JSON bicimini donduruyor: {"Answer":[{"data":"1.2.3.4"}]}
-        /// </summary>
+        // Cloudflare ve Google ayni JSON bicimini donduruyor:
+        // {"Answer":[{"data":"1.2.3.4"}]}
         private static List<string> ResolveViaDoh(string host, string endpoint)
         {
             var result = new List<string>();
@@ -590,7 +559,7 @@ namespace Etodpx.Tune
                 using (var sr = new StreamReader(resp.GetResponseStream()))
                 {
                     string body = sr.ReadToEnd();
-                    // Tam JSON ayristiricisina gerek yok: "data":"<ipv4>" ariyoruz.
+                    // Tam JSON ayristiricisi gereksiz; "data":"<ipv4>" ariyoruz.
                     const string key = "\"data\":\"";
                     int i = 0;
                     while ((i = body.IndexOf(key, i, StringComparison.Ordinal)) >= 0)
@@ -611,11 +580,7 @@ namespace Etodpx.Tune
             return result;
         }
 
-        /// <summary>
-        /// Belirtilen DNS sunucusuna DOGRUDAN sorar (sistem cozumleyicisini
-        /// atlar). Amac, sistem DNS'inin verdigi cevabi bagimsiz bir kaynakla
-        /// karsilastirip sahte cevabi yakalamak.
-        /// </summary>
+        // Sistem cozumleyicisini atlayip sunucuya dogrudan sorar.
         private static List<string> ResolveVia(string server, string host)
         {
             var result = new List<string>();
@@ -679,7 +644,7 @@ namespace Etodpx.Tune
             }
         }
 
-        /// <summary>DNS adini atlar; sikistirma isaretcisi (0xC0) iki bayttir.</summary>
+        // Sikistirma isaretcisi (0xC0) iki bayt.
         private static int SkipName(byte[] r, int i)
         {
             while (i < r.Length)
@@ -706,8 +671,8 @@ namespace Etodpx.Tune
             finally { try { c.Close(); } catch { } }
         }
 
-        /// <summary>Sertifika dogrulamasi KAPALI - burada amac el sikismanin
-        /// tamamlanip tamamlanmadigi, kimin cevap verdigi degil.</summary>
+        // Sertifika dogrulamasi kapali: burada soru el sikismanin tamamlanip
+        // tamamlanmadigi, kimin cevap verdigi degil.
         private static bool HandshakeWithSni(string ip, string sni)
         {
             TcpClient c = null;
@@ -732,7 +697,7 @@ namespace Etodpx.Tune
             }
         }
 
-        // ------------------------------------------------------------ stratejiler
+        // --- stratejiler
 
         private static List<Strategy> BuildStrategies()
         {
@@ -752,10 +717,10 @@ namespace Etodpx.Tune
             l.Add(new Strategy { Name = "sadece split (midsld)", Tls = "split" });
             l.Add(new Strategy { Name = "sadece disorder (pos 1)", Tls = "disorder", SplitPos = "1" });
 
-            // TTL varyantlari. Paketleri yeniden birlestiren DPI kutularina karsi
-            // en etkili yontem budur: sahte paket gecerli (dogru seq + dogru
-            // checksum) oldugu icin DPI onu kabul eder, ama TTL yuzunden sunucuya
-            // varmadan oler. Deger hatta gore degisir, o yuzden hepsini deniyoruz.
+            // TTL varyantlari: paketleri yeniden birlestiren DPI kutularina karsi
+            // en etkili yontem. Sahte paket gecerli oldugu icin DPI kabul ediyor,
+            // TTL yuzunden sunucuya varmadan oluyor. Deger hatta gore degistigi
+            // icin hepsini deniyoruz.
             foreach (int t in new[] { 1, 2, 3, 4, 5, 6, 7 })
             {
                 l.Add(new Strategy { Name = "ttl " + t + " + host disorder", Ttl = true, TtlValue = t, SplitPos = "host" });
@@ -767,25 +732,17 @@ namespace Etodpx.Tune
             return l;
         }
 
-        /// <summary>
-        /// Kalan denemelerin hepsi gecse bile <paramref name="bestScore"/>
-        /// asilamiyorsa bu strateji kazanamaz. Kazanmak icin puanin en iyiyi
-        /// GECMESI gerekir; esitlik yetmez, o yuzden karsilastirma "&lt;=".
-        /// <para>Ayri bir metot cunku buradaki bir off-by-one calisan bir
-        /// stratejiyi sessizce eler ve kullaniciya "engel asilamiyor" dedirtir
-        /// - fark edilmesi zor, sonucu buyuk bir hata. Testle korunuyor.</para>
-        /// </summary>
+        // Kalan denemelerin hepsi gecse bile bestScore asilamiyorsa bu strateji
+        // kazanamaz. Kazanmak icin en iyiyi gecmek gerek, esitlik yetmez - o yuzden
+        // karsilastirma "<=". Ayri metot: buradaki bir off-by-one calisan bir
+        // stratejiyi sessizce eler ve kullaniciya "engel asilamiyor" dedirtir.
         internal static bool CannotWin(int ok, int remaining, int bestScore)
         {
             return ok + remaining <= bestScore;
         }
 
-        /// <summary>
-        /// Kazanan adayini tam derinlikte yeniden olcer. Tarama hedef basina tek
-        /// deneme yaptigi icin tek bir sansli el sikismasi calismayan bir
-        /// stratejiyi kazanan gosterebilir; yazilacak ayar bu kontrolden
-        /// gecmek zorunda.
-        /// </summary>
+        // Tarama hedef basina tek deneme yaptigi icin sansli tek bir el sikismasi
+        // calismayan bir stratejiyi kazanan gosterebiliyor.
         private static int Confirm(Strategy s, int confirmTotal)
         {
             W("  dogrulaniyor".PadRight(42));
@@ -823,17 +780,11 @@ namespace Etodpx.Tune
             }
         }
 
-        // ------------------------------------------------------------------ test
+        // --- test
 
-        /// <summary>
-        /// Hedeflere sirayla baglanir.
-        /// <para><paramref name="giveUpAtOrBelow"/>: o ana kadarki en iyi puan.
-        /// Kalan denemelerin hepsi gecse bile bu puan asilamiyorsa strateji
-        /// kazanamaz; devam etmek sonucu degistirmez, yalnizca bekletir.
-        /// Basarisiz bir el sikismasi zaman asimina kadar surdugu icin bu
-        /// erken cikis olculebilir zaman kazandirir. -1 verilirse hic
-        /// vazgecilmez - temel olcum ve dogrulama icin sart.</para>
-        /// </summary>
+        // giveUpAtOrBelow: o ana kadarki en iyi puan. Asilamayacagi anlasilinca
+        // devam etmek sonucu degistirmiyor, yalnizca bekletiyor. -1 verilirse hic
+        // vazgecilmez; temel olcum ve dogrulama icin sart.
         private static int RunTests(int tries, int giveUpAtOrBelow, out bool aborted)
         {
             aborted = false;
@@ -849,10 +800,8 @@ namespace Etodpx.Tune
             return ok;
         }
 
-        /// <summary>
-        /// Gercek TLS el sikismasi. Sertifika ADI ve ZINCIRI dogrulanir; boylece
-        /// engel sayfasi ya da araya giren bir sunucu basari olarak sayilmaz.
-        /// </summary>
+        // Sertifika adi ve zinciri dogrulaniyor: engel sayfasi ya da araya giren
+        // bir sunucu basari sayilmasin.
         private static bool Handshake(string host)
         {
             TcpClient c = null;
@@ -864,8 +813,8 @@ namespace Etodpx.Tune
                 if (!ar.AsyncWaitHandle.WaitOne(4000)) return false;
                 c.EndConnect(ar);
 
-                // Zaman asimi sart: DPI baglantiyi sessizce yutarsa el sikisma
-                // TCP yeniden gonderim zaman asimini (20+ sn) beklerdi.
+                // DPI baglantiyi sessizce yutarsa el sikisma TCP yeniden gonderim
+                // zaman asimini (20+ sn) beklerdi.
                 var ns = c.GetStream();
                 ns.ReadTimeout = 3500;
                 ns.WriteTimeout = 3500;
@@ -890,13 +839,10 @@ namespace Etodpx.Tune
             return errors == SslPolicyErrors.None;
         }
 
-        // ---------------------------------------------------------------- yardimci
+        // --- yardimci
 
-        /// <summary>
-        /// Arayuz uygulamayi kendisi yonettiginde ayarlayici calisan ana kopyayi
-        /// kapatmaz. Yine de baska klasorden acik bir surum varsa makine-okunur
-        /// bir kayit birakir; arayuz bunu sonucta kullaniciya gosterebilir.
-        /// </summary>
+        // Arayuz uygulamayi kendisi yonetiyorsa ayarlayici ana kopyayi kapatmaz.
+        // Baska klasorden acik bir surum varsa makine-okunur bir kayit birakir.
         private static void ReportOtherCopies()
         {
             string dir = Path.GetDirectoryName(
@@ -943,10 +889,8 @@ namespace Etodpx.Tune
                 catch { p.Dispose(); }
             }
 
-            // Baska bir klasordeki kopya calisiyorsa bunu SOYLEMEK sart: ayari
-            // buraya yaziyoruz ama kullanici oradaki uygulamaya bakiyor olabilir.
-            // Sessiz kalirsa "tuner kazanan buldu ama hicbir sey degismedi"
-            // durumu olusur ve sebebi hic anlasilmaz.
+            // Ayari buraya yaziyoruz ama kullanici oteki kopyaya bakiyor olabilir.
+            // Sessiz kalirsak "kazanan bulundu, hicbir sey degismedi" durumu olusur.
             if (elsewhere.Count > 0)
             {
                 WL();
@@ -1037,6 +981,8 @@ namespace Etodpx.Tune
             }
         }
 
+        private const string TuneHeader = "# --- etodpx-tune tarafindan bulundu: ";
+
         private static void WriteConf(Strategy best)
         {
             string dir = Path.GetDirectoryName(
@@ -1049,9 +995,19 @@ namespace Etodpx.Tune
 
             if (File.Exists(path))
             {
+                // Onceki turun basligi da gitmeli. Ayar satirlari degisiyordu ama
+                // yorumlar kaliyor, dosya her turda bir baslik daha topluyordu.
+                bool afterHeader = false;
                 foreach (var line in File.ReadAllLines(path))
                 {
                     string t = line.TrimStart();
+                    if (t.StartsWith(TuneHeader, StringComparison.Ordinal)) { afterHeader = true; continue; }
+                    if (afterHeader)
+                    {
+                        afterHeader = false;
+                        if (t.StartsWith("# --- ", StringComparison.Ordinal)) continue;   // tarih satiri
+                    }
+
                     int eq = t.IndexOf('=');
                     if (eq > 0 && t.Length > 0 && t[0] != '#' && t[0] != ';')
                     {
@@ -1060,10 +1016,14 @@ namespace Etodpx.Tune
                     }
                     keep.Add(line);
                 }
+
+                // Ayirici bos satir da gitmeli, yoksa dosya her turda bir satir uzar.
+                while (keep.Count > 0 && keep[keep.Count - 1].Trim().Length == 0)
+                    keep.RemoveAt(keep.Count - 1);
             }
 
             keep.Add("");
-            keep.Add("# --- etodpx-tune tarafindan bulundu: " + best.Name);
+            keep.Add(TuneHeader + best.Name);
             keep.Add("# --- " + DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
             foreach (var l in best.ConfLines().Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
                 keep.Add(l);
@@ -1080,8 +1040,8 @@ namespace Etodpx.Tune
             Console.ReadLine();
         }
 
-        /// <summary>Sonuclari diske yaz - arac yonetici olarak ayri bir pencerede
-        /// calistigi icin ciktiyi baska turlu okumak zor.</summary>
+        // Arac ayri bir yonetici penceresinde calistigi icin ciktiyi baska
+        // turlu okumak zor.
         private static void FlushLog()
         {
             try
