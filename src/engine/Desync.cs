@@ -1,7 +1,5 @@
-﻿// etodpx - desync stratejileri (sicak yol)
-// Bu sinifin her ornegi tek bir is parcacigina aittir. Calisma aninda tahsis
-// yapmaz: tum tamponlar acilista unmanaged bellekten alinir, boylece GC
-// duraklamalari paket isleme gecikmesine karismaz.
+﻿// Desync stratejileri. Her ornek tek bir is parcacigina ait.
+// Tamponlar acilista unmanaged bellekten alinir: paket yolunda tahsis yok.
 using System;
 using System.Runtime.InteropServices;
 
@@ -10,8 +8,7 @@ namespace Etodpx.Engine
     internal sealed unsafe class DesyncWorker : IDisposable
     {
         private const int BufSize = 0x10000 + 64;
-        // QUIC Initial en az 1200 bayt olmali; 1250 hem bu siniri asar hem de
-        // IPv6 asgari MTU'suna (1280) sigar, yani yolda parcalanmaz.
+        // 1200 = QUIC Initial alt siniri, 1280 = IPv6 asgari MTU. Arasi.
         private const int QuicFakeSize = 1250;
 
         private readonly Config _cfg;
@@ -90,16 +87,9 @@ namespace Etodpx.Engine
         public byte* RecvBuffer { get { return _recv; } }
         public int RecvCapacity { get { return BufSize; } }
 
-        /// <summary>
-        /// Payload gercekten bir TLS ClientHello ile mi basliyor?
-        ///
-        /// Yalnizca "16 03 .. .. .. 01" desenine bakmak YETMEZ: sifreli akis
-        /// ortasindaki rastgele bir parca bu desene 16 milyonda bir uyar - buyuk
-        /// bir indirmede bu birkac kez gerceklesir ve araya gecerli checksum'li
-        /// sahte paket girer. Bu yuzden kayit ve el sikisma uzunluklarinin
-        /// birbiriyle tutarli olmasi da aranir; rastgele veride bu neredeyse
-        /// imkansizdir.
-        /// </summary>
+        // "16 03 .. .. .. 01" deseni tek basina yetmiyor: sifreli akis ortasindaki
+        // rastgele veri 16 milyonda bir uyuyor ve buyuk bir indirmede bu birkac kez
+        // oluyor. Uzunluk alanlarinin tutarliligi da araniyor.
         private static bool IsClientHello(byte* p, int len)
         {
             if (len < 9) return false;
@@ -111,15 +101,11 @@ namespace Etodpx.Engine
             if (recLen < 4 || recLen > 0x4000) return false;   // TLS kaydi en fazla 16 KB
 
             int hsLen = (p[6] << 16) | (p[7] << 8) | p[8];
-            // El sikisma govdesi kaydin icine tam oturmali (4 bayt el sikisma basligi).
-            // Bu kontrol paket TCP segmentlerine bolunmus olsa bile gecerlidir.
+            // Govde kaydin icine tam oturmali. Paket segmentlere bolunmus olsa da gecerli.
             return hsLen == recLen - 4;
         }
 
-        /// <summary>
-        /// Payload bir HTTP istek satiriyla mi basliyor?
-        /// Akis ortasindaki gövde verisini istekle karistirmamak icin sart.
-        /// </summary>
+        // Akis ortasindaki govde verisini istekle karistirmamak icin.
         private static bool LooksLikeHttpRequest(byte* p, int len)
         {
             if (len < 16) return false;
@@ -140,9 +126,8 @@ namespace Etodpx.Engine
                     return false;
             }
 
-            // Yontem eslesmesi tek basina yetmez: akis ortasindaki bir govde
-            // parcasi da "POST" ile baslayabilir. Gercek istek satiri
-            // " HTTP/1.x" ile bitmelidir - bunu ariyoruz.
+            // Govde parcasi da "POST" ile baslayabilir; istek satiri " HTTP/1.x"
+            // ile biter, onu ariyoruz.
             int scan = len < 2048 ? len : 2048;
             for (int i = 1; i + 1 < scan; i++)
             {
@@ -166,13 +151,10 @@ namespace Etodpx.Engine
             return x;
         }
 
-        // ===================================================================== TCP
+        // --- TCP
 
-        /// <summary>
-        /// Yakalanan giden TCP paketini isler.
-        /// true  -> paketi biz yeniden urettik, orijinali gonderme.
-        /// false -> dokunmadik, oldugu gibi geri enjekte et.
-        /// </summary>
+        // true  -> paketi biz yeniden urettik, orijinali gonderme.
+        // false -> dokunmadik, oldugu gibi geri enjekte et.
         public bool HandleTcp(int len, ref DivertAddress addr)
         {
             PacketView v;
@@ -180,9 +162,8 @@ namespace Etodpx.Engine
             if (v.Protocol != Packet.ProtoTcp || v.PayloadLength <= 0) return false;
             if (v.IsV6 && !_cfg.EnableIPv6) return false;
 
-            // TCP Fast Open: SYN paketi yuk tasiyabilir ve icinde ClientHello olabilir.
-            // Boyle bir paketi bolmek iki ayri SYN uretir ve baglantiyi tamamen bozar.
-            // RST/SYN tasiyan hicbir pakete dokunmuyoruz.
+            // TCP Fast Open'da SYN yuk tasir; onu bolmek iki ayri SYN uretir ve
+            // baglantiyi bozar. SYN/RST tasiyan paketlere hic dokunmuyoruz.
             byte f0 = Packet.TcpFlags(_recv, v.L4Offset);
             if ((f0 & (Packet.TcpSyn | Packet.TcpRst)) != 0) return false;
 
@@ -211,38 +192,27 @@ namespace Etodpx.Engine
             }
             else
             {
-                // Akis ortasindaki veri. Asla dokunmuyoruz: bolmek gereksiz gecikme
-                // ve bozulma riski demek. Cekirdek filtresi bunlari zaten elemeli;
-                // bu kontrol filtre genis moda dustugunde guvenligi saglar.
+                // Akis ortasindaki veri; bolmenin faydasi yok, riski var. Cekirdek
+                // filtresi bunlari zaten eliyor - burasi genis moda dusulunce devrede.
                 return false;
             }
 
             if (!wantFake && !wantSplit) return false;
 
-            // --- bolme konumunu sec ---------------------------------------------
+            // bolme konumunu sec
             int splitPos = -1;
             if (wantSplit)
             {
-                HostLocation h = isTls ? Hostname.FindSni(pl, plLen) : Hostname.FindHttpHost(pl, plLen);
-                if (h.Found)
-                {
-                    splitPos = _splitAtHostStart ? h.Offset + 1 : Hostname.MidSld(pl, h.Offset, h.Length);
-                    _stats.BumpHost();
-                }
-                else
-                {
-                    splitPos = _fixedSplitPos > 0 ? _fixedSplitPos : (isTls ? 3 : 2);
-                }
-                if (splitPos <= 0 || splitPos >= plLen) splitPos = -1;
+                bool hostFound;
+                splitPos = ChooseSplitPos(pl, plLen, isTls, _splitAtHostStart, _fixedSplitPos, out hostFound);
+                if (hostFound) _stats.BumpHost();
             }
 
-            // Buradan sonra hicbir sey gondermeyeceksek tampona DOKUNMADAN cikilir:
-            // WorkerLoop yakalanan paketi oldugu gibi, checksum'i yeniden
-            // hesaplamadan enjekte eder.
+            // Gonderecek bir sey yoksa tampona dokunmadan cik: WorkerLoop paketi
+            // checksum'i yeniden hesaplamadan enjekte ediyor.
             if (splitPos <= 0 && !wantFake) return false;
 
-            // Artik gercek veriyi kendimiz gonderecegiz; yuku degistirmek guvenli.
-            // Yine de gonderim basarisiz olursa geri alinabilmesi icin kaydediyoruz.
+            // Yuku degistirmek artik guvenli, ama gonderim tutmazsa geri almaliyiz.
             int hostCaseAt = -1;
             uint hostCaseSaved = 0;
             if (isHttp && _cfg.HttpHostCase)
@@ -252,7 +222,7 @@ namespace Etodpx.Engine
             uint seq = Packet.TcpSeq(_recv, v.L4Offset);
             byte flags = Packet.TcpFlags(_recv, v.L4Offset);
 
-            // --- 1) sahte paket(ler): DPI bunlari gorur, sunucu gormez ----------
+            // 1) sahte paket(ler): DPI bunlari gorur, sunucu gormez
             if (wantFake)
             {
                 bool anyFakeSent = false;
@@ -262,22 +232,20 @@ namespace Etodpx.Engine
                     if (_cfg.FakeBadSum)
                         anyFakeSent |= SendTcp(ref v, hdrLen, fakePayload, fakeLen, seq, flags, ref addr, true, 0);
 
-                    // Pencere disi seq: checksum dogrulayan DPI icin. Sunucu bunu
-                    // her durumda "eski veri" sayip atar, yani TTL kadar riskli degil.
+                    // Pencere disi seq: checksum dogrulayan DPI icin. Sunucu eski veri sayip atar.
                     if (_cfg.FakeWrongSeq)
                         anyFakeSent |= SendTcp(ref v, hdrLen, fakePayload, fakeLen,
                                 unchecked(seq - (uint)_cfg.FakeWrongSeqDelta), flags, ref addr, false, 0);
 
-                    // Dusuk TTL: DPI kutusunu gecer, sunucuya varmadan oler.
-                    // TTL hedeften uzaksa sahte paket sunucuya ULASIR ve baglantiyi
-                    // bozar - bu yuzden degeri hatta gore ayarlanmali.
+                    // Dusuk TTL: DPI'i gecer, sunucuya varmadan oler. Deger fazla
+                    // gelirse sahte paket sunucuya ulasip baglantiyi bozar.
                     if (_cfg.FakeTtl)
                         anyFakeSent |= SendTcp(ref v, hdrLen, fakePayload, fakeLen, seq, flags, ref addr, false, (byte)_cfg.FakeTtlValue);
                 }
                 if (anyFakeSent) _stats.BumpFake();
             }
 
-            // --- 2) gercek veri --------------------------------------------------
+            // 2) gercek veri
             bool realSent;
             if (splitPos > 0)
             {
@@ -306,10 +274,8 @@ namespace Etodpx.Engine
                 realSent = SendTcp(ref v, hdrLen, pl, plLen, seq, flags, ref addr, false, 0);
             }
 
-            // Urettigimiz gercek segmentlerden biri bile gitmediyse orijinali
-            // yutmayiz. false, WorkerLoop'a yakalanan paketi oldugu gibi gonder der -
-            // ama once yukta yaptigimiz degisikligi geri almaliyiz, yoksa eski
-            // checksum ile degismis yuk gider ve paket sunucuda dusurulur.
+            // Segmentlerden biri bile gitmediyse orijinali yutmuyoruz. Ama once
+            // yuku eski haline dondur: eski checksum ile degismis yuk sunucuda duser.
             if (!realSent)
             {
                 Hostname.RestoreHttpHostCase(pl, hostCaseAt, hostCaseSaved);
@@ -320,9 +286,38 @@ namespace Etodpx.Engine
             return true;
         }
 
-        // ==================================================================== QUIC
+        // -1 donerse bolme yapilmaz.
+        //
+        // split_pos sayi verildiginde mutlak konumdur, alan adi aranmaz. Once alan
+        // adina bakip bulununca sayiyi yok saymak "pos 2" ayarini sessizce midsld'e
+        // cevirir; ayarlayicinin pos stratejileri de midsld'in kopyasi olur.
+        internal static int ChooseSplitPos(byte* pl, int plLen, bool isTls,
+                                           bool splitAtHostStart, int fixedSplitPos, out bool hostFound)
+        {
+            hostFound = false;
+            int pos;
 
-        /// <summary>Giden QUIC Initial paketi. true -> orijinali gonderme.</summary>
+            if (fixedSplitPos > 0)
+            {
+                pos = fixedSplitPos;
+            }
+            else
+            {
+                HostLocation h = isTls ? Hostname.FindSni(pl, plLen) : Hostname.FindHttpHost(pl, plLen);
+                if (h.Found)
+                {
+                    hostFound = true;
+                    pos = splitAtHostStart ? h.Offset + 1 : Hostname.MidSld(pl, h.Offset, h.Length);
+                }
+                else pos = isTls ? 3 : 2;
+            }
+
+            return pos <= 0 || pos >= plLen ? -1 : pos;
+        }
+
+        // --- QUIC
+
+        // Giden QUIC Initial paketi. true -> orijinali gonderme.
         public bool HandleQuic(int len, ref DivertAddress addr)
         {
             string mode = _cfg.QuicMode;
@@ -333,14 +328,12 @@ namespace Etodpx.Engine
             if (v.Protocol != Packet.ProtoUdp || v.PayloadLength <= 0) return false;
             if (v.IsV6 && !_cfg.EnableIPv6) return false;
 
-            // Sadece QUIC Initial (uzun baslik, tip=Initial). Kisa baslikli veri
-            // paketlerine dokunmak aktarim hizini bozar - onlar buradan gecmez.
+            // Yalnizca Initial. Kisa baslikli veri paketlerine dokunmak hizi bozar.
             if (v.PayloadLength < 1200) return false;
 
             byte* q = v.Payload;
-            // Surum alani (bayt 1-4). Bu kontrol olmadan UDP/443 uzerinden gecen
-            // QUIC disi trafik - ornegin Steam Datagram Relay uzerinden gelen oyun
-            // paketleri - yanlislikla QUIC sanilir ve araya sahte paket girer.
+            // Surum alani (bayt 1-4). Bu olmadan UDP/443'ten gecen QUIC disi trafik
+            // - Steam Datagram Relay gibi - QUIC sanilip araya sahte paket giriyor.
             uint version = Packet.Read32(q + 1);
             bool v1Initial = version == 0x00000001 && q[0] >= 0xc0 && q[0] <= 0xcf;
             bool v2Initial = version == 0x6b3343cf && q[0] >= 0xd0 && q[0] <= 0xdf;
@@ -374,11 +367,10 @@ namespace Etodpx.Engine
             return true;
         }
 
-        /// <summary>Sahte QUIC paketindeki DCID/SCID alanlarini tazeler (ofset 5..22).</summary>
+        // [0]tip [1-4]surum [5]dcid_len [6-13]DCID [14]scid_len [15-22]SCID
+        // Uzunluk baytlarina dokunmuyoruz, yoksa paket bicimsiz kalir.
         private void RefreshQuicIds()
         {
-            // Yerlesim: [0]tip [1-4]surum [5]dcid_len [6-13]DCID [14]scid_len [15-22]SCID
-            // Uzunluk baytlarina dokunmuyoruz, yoksa paket bicimsiz kalir.
             Packet.Write32(_quicP + 6, NextRand());
             Packet.Write32(_quicP + 10, NextRand());
             Packet.Write32(_quicP + 15, NextRand());
@@ -399,22 +391,19 @@ namespace Etodpx.Engine
             }
         }
 
-        // ============================================================ paket kurma
+        // --- paket kurma
 
-        /// <summary>
-        /// Orijinalin IP+TCP basligini kopyalayip yeni yuk ile paket kurar ve yollar.
-        /// badSum=true  -> TCP checksum kasitli bozulur: DPI paketi isler, sunucu atar.
-        /// ttl&gt;0      -> TTL dusurulur: paket DPI'i gecer, sunucuya varmadan oler.
-        /// </summary>
+        // Orijinalin IP+TCP basligini kopyalayip yeni yuk ile paket kurar ve yollar.
+        // badSum=true  -> TCP checksum kasitli bozulur: DPI paketi isler, sunucu atar.
+        // ttl>0      -> TTL dusurulur: paket DPI'i gecer, sunucuya varmadan oler.
         private bool SendTcp(ref PacketView v, int hdrLen, byte* payload, int payloadLen,
                              uint seq, byte flags, ref DivertAddress addr, bool badSum, byte ttl)
         {
             int total = hdrLen + payloadLen;
             if (total > BufSize || payloadLen < 0)
             {
-                // Erisilmez olmali (tampon 64 KB, IP paketi en fazla 65535) ama
-                // sessizce vazgecmek veri kaybi demektir: cagiran "gonderdim"
-                // sanip orijinali yeniden enjekte etmez.
+                // Tampon 64 KB, IP paketi en fazla 65535 - buraya dusmemeli. Yine de
+                // sessizce vazgecmiyoruz: cagiran "gonderdim" sanip orijinali atlar.
                 _stats.BumpSendError();
                 return false;
             }
@@ -438,9 +427,6 @@ namespace Etodpx.Engine
             int total = hdrLen + payloadLen;
             if (total > BufSize || payloadLen < 0)
             {
-                // Erisilmez olmali (tampon 64 KB, IP paketi en fazla 65535) ama
-                // sessizce vazgecmek veri kaybi demektir: cagiran "gonderdim"
-                // sanip orijinali yeniden enjekte etmez.
                 _stats.BumpSendError();
                 return false;
             }
