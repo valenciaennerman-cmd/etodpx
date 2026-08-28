@@ -1,4 +1,4 @@
-﻿// etodpx - ayar dosyasi (etodpx.conf). Arayuzde ayar yok; guc kullanicilari icin dosya.
+﻿// etodpx.conf ayristirmasi. Arayuzde ayar yok; bu dosya guc kullanicilari icin.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -74,11 +74,8 @@ namespace Etodpx
             return c;
         }
 
-        /// <summary>
-        /// Ayarlayicinin diske yazdigi yeni degerleri calisan uygulamaya tasir.
-        /// Motor bu cagri sirasinda kapali tutulur; yeniden baslatildiginda ayni
-        /// Config nesnesindeki yeni degerleri kullanir.
-        /// </summary>
+        // Ayarlayicinin diske yazdigi degerleri calisan uygulamaya tasir. Motor bu
+        // sirada kapali; yeniden baslayinca ayni nesnedeki yeni degerleri kullanir.
         public void CopyFrom(Config other)
         {
             if (other == null) throw new ArgumentNullException("other");

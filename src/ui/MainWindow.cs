@@ -1,12 +1,9 @@
-﻿// etodpx - ana pencere. Tamami kod ile kurulur (XAML yok), boylece
-// tek bir csc.exe cagrisiyla derlenir ve ek arac gerektirmez.
+﻿// Ana pencere. XAML yok, hepsi kodla kuruluyor - tek csc.exe cagrisi yetsin diye.
 //
-// Baslik cubugu dugmeleri hakkinda:
-// Baslik cubugu MouseLeftButtonDown olayinda DragMove() cagirir. DragMove
-// modal bir surukleme dongusune girip fareyi yakalar, dolayisiyla ustune
-// basilan dugmeye MouseLeftButtonUp HIC ULASMAZ - dugmeler calismaz gorunur.
-// Cozum: dugmeler kendi MouseLeftButtonDown olayini Handled isaretler,
-// boylece olay baslik cubuguna hic ulasmaz.
+// Baslik cubugu MouseLeftButtonDown'da DragMove() cagiriyor. DragMove modal bir
+// surukleme dongusune girip fareyi yakaladigi icin ustune basilan dugmeye
+// MouseLeftButtonUp hic ulasmiyor ve dugmeler olu gorunuyor. Dugmeler bu yuzden
+// kendi MouseLeftButtonDown'larini Handled isaretliyor.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -78,8 +75,8 @@ namespace Etodpx.Ui
             Width = 384;
             Height = 438;
             WindowStyle = WindowStyle.None;
-            // CanMinimize: boyutlandirmayi kapatir ama WS_MINIMIZEBOX stilini
-            // KORUR. NoResize bu stili kaldirir ve kucultme guvenilmez olur.
+            // CanMinimize boyutlandirmayi kapatir ama WS_MINIMIZEBOX'i korur;
+            // NoResize onu kaldirir ve kucultme guvenilmez olur.
             ResizeMode = ResizeMode.CanMinimize;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             SnapsToDevicePixels = true;
@@ -102,8 +99,7 @@ namespace Etodpx.Ui
                 _engine.Stop();
             };
 
-            // Pencere gizliyken (tepsiye indirilmisken) ne animasyon ne de sayac
-            // tazelemesi calisir; gorunmeyen pencere icin kare uretmek israftir.
+            // Tepsideyken ne animasyon ne sayac tazelemesi calisir.
             IsVisibleChanged += delegate
             {
                 bool vis = IsVisible;
@@ -119,7 +115,7 @@ namespace Etodpx.Ui
             _timer.Start();
         }
 
-        // ==================================================================== kurulum
+        // --- kurulum
 
         private UIElement BuildUi()
         {
@@ -153,8 +149,7 @@ namespace Etodpx.Ui
             bar.MouseLeftButtonDown += delegate (object s, MouseButtonEventArgs e)
             {
                 if (e.ButtonState != MouseButtonState.Pressed) return;
-                // Ikinci guvenlik: tiklama bir dugmeden geliyorsa surukleme baslatma.
-                // (Dugmeler olayi zaten Handled isaretliyor; bu ondan bagimsiz calisir.)
+                // Dugmeler olayi zaten Handled isaretliyor; bu ikinci emniyet.
                 if (IsTitleBarButton(e.OriginalSource as DependencyObject)) return;
                 try { DragMove(); } catch (InvalidOperationException) { }
             };
@@ -203,7 +198,7 @@ namespace Etodpx.Ui
             return bar;
         }
 
-        /// <summary>Verilen ogenin gorsel agacta bir baslik cubugu dugmesi icinde olup olmadigi.</summary>
+        // Oge, gorsel agacta bir baslik cubugu dugmesinin icinde mi.
         private static bool IsTitleBarButton(DependencyObject d)
         {
             while (d != null)
@@ -242,8 +237,7 @@ namespace Etodpx.Ui
             b.MouseEnter += delegate { b.Background = _hover; tb.Foreground = _text; };
             b.MouseLeave += delegate { b.Background = Brushes.Transparent; tb.Foreground = _sub; };
 
-            // Handled=true sart: yoksa olay baslik cubuguna gidip DragMove()
-            // tetikler ve asagidaki MouseLeftButtonUp hic gelmez.
+            // Handled olmazsa olay baslik cubuguna gidip DragMove() tetikler.
             b.MouseLeftButtonDown += delegate (object s, MouseButtonEventArgs e) { e.Handled = true; };
             b.MouseLeftButtonUp += delegate (object s, MouseButtonEventArgs e)
             {
@@ -361,7 +355,7 @@ namespace Etodpx.Ui
             return button;
         }
 
-        // ==================================================================== davranis
+        // --- davranis
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
@@ -402,9 +396,8 @@ namespace Etodpx.Ui
                     try { _engine.Stop(); } catch { }
                 }
 
-                // Kullanici baslatma sirasinda pencereyi kaparsa Dispatcher kapanmis
-                // olur ve BeginInvoke InvalidOperationException atar. Bu bir havuz
-                // is parcaciginda oldugu icin yakalanmazsa SURECI COKERTIR.
+                // Pencere bu sirada kapanirsa Dispatcher da kapanir ve BeginInvoke
+                // atar. Havuz is parcaciginda oldugumuz icin yakalamak sart.
                 try
                 {
                     Dispatcher.BeginInvoke(new Action(delegate
@@ -415,10 +408,9 @@ namespace Etodpx.Ui
                         SetRepairBusy(false);
                         ApplyState();
 
-                        // Baslatma hatalari genelde kullanicinin yapabilecegi bir
-                        // sey iceriyor (servisi sil, Bellek Butunlugu'nu kapat).
-                        // Bunu dar alt satira sigdirmak yerine kopyalanabilir bir
-                        // pencerede gosteriyoruz.
+                        // Baslatma hatalari genelde yapilabilecek bir sey iceriyor
+                        // (servisi sil, Bellek Butunlugu'nu kapat); dar alt satir
+                        // yerine kopyalanabilir bir pencerede gosteriyoruz.
                         if (err != null && starting)
                         {
                             MessageBox.Show(this, _lastError, "etodpx - koruma başlatılamadı",
@@ -506,8 +498,8 @@ namespace Etodpx.Ui
                     if (dnsBackup == null)
                         throw new InvalidOperationException("Aktif ağ bağlantısının DNS ayarı yedeklenemedi: " + dnsError);
 
-                    // Ayar komutu son adimda hata verse bile DNS'e dokunmus
-                    // olabilir. Bu bayrak once kalkar ki finally mutlaka geri alsin.
+                    // Komut son adimda patlasa bile DNS'e dokunmus olabilir; bayrak
+                    // once kalkiyor ki finally mutlaka geri alsin.
                     dnsMayHaveChanged = true;
                     if (!NetworkRepair.ConfigureCloudflareDoh(dnsBackup, out dnsError))
                         throw new InvalidOperationException("Şifreli DNS kurulamadı: " + dnsError);
@@ -520,8 +512,8 @@ namespace Etodpx.Ui
                         throw new InvalidOperationException(
                             "Şifreli DNS bu ağda doğrulanamadı. Eski DNS ayarı geri yüklenecek.");
 
-                    // Ikinci tani DNS asamasini gecti. Sonuc IP engeli bile olsa
-                    // DNS artik dogru calisiyordur; yeni ayari korumak gerekir.
+                    // Ikinci tani DNS asamasini gecti; sonuc IP engeli bile olsa
+                    // DNS artik dogru calisiyor demektir, yeni ayar kalsin.
                     keepDns = true;
                 }
 
@@ -543,8 +535,7 @@ namespace Etodpx.Ui
                     }
                 }
 
-                // Tani hangi sonucla biterse bitsin kullaniciyi korumasiz
-                // birakma; eldeki en son gecerli ayarla motoru geri ac.
+                // Tani nasil biterse bitsin kullaniciyi korumasiz birakma.
                 try
                 {
                     if (!_closing && !_engine.IsRunning) StartEngineWithRecovery();
@@ -993,11 +984,8 @@ namespace Etodpx.Ui
             try { if (!p.HasExited) p.Kill(); } catch { }
         }
 
-        /// <summary>
-        /// Eski GoodbyeDPI/zapret kurulumlarindan kalan devre disi WinDivert
-        /// servisi acilisi engeller. Uygulama zaten yonetici oldugu icin bu tek
-        /// ve tanimli kalintiyi temizleyip bir kez daha deneyebiliriz.
-        /// </summary>
+        // Eski GoodbyeDPI/zapret kurulumlarindan kalan devre disi WinDivert servisi
+        // acilisi engelliyor. Yonetici oldugumuz icin temizleyip tekrar deniyoruz.
         private void StartEngineWithRecovery()
         {
             try
@@ -1016,9 +1004,8 @@ namespace Etodpx.Ui
 
         private static bool RepairDisabledWinDivert()
         {
-            // WinDivert gecici bir servistir: sc stop son acik tutamagi kapatinca
-            // servis kendini kayittan silebilir. Bu durumda ardindan gelen
-            // sc delete 1060 verir; bu BASARI durumudur, hata degil.
+            // WinDivert gecici bir servis: sc stop son tutamagi kapatinca kendini
+            // kayittan silebiliyor. Sonraki sc delete o zaman 1060 verir - basari.
             RunSc("stop WinDivert");
             Thread.Sleep(250);
             if (!ServiceExists("WinDivert")) return true;
@@ -1155,8 +1142,7 @@ namespace Etodpx.Ui
                 _title.Foreground = _danger;
                 _subtitle.Text = "Koruma başlatılamadı";
                 _footer.Foreground = _danger;
-                // Alt satir dar: cok satirli bir cozum metni burada kirpilir.
-                // Ilk satiri gosterip gerisini pencereye biraktik.
+                // Alt satir dar; ilk satiri gosterip gerisini pencereye birakiyoruz.
                 _footer.Text = FirstLine(_lastError);
                 return;
             }
@@ -1182,18 +1168,15 @@ namespace Etodpx.Ui
             RefreshStats();
         }
 
-        /// <summary>
-        /// Sahte paket yontemlerinden biri acik mi? Hicbiri acik degilse yalnizca
-        /// bolme yapiliyor demektir - guvenli ama paketleri yeniden birlestiren
-        /// DPI kutularina karsi genelde yetersiz.
-        /// </summary>
+        // Hicbiri acik degilse yalnizca bolme var: guvenli, ama paketleri yeniden
+        // birlestiren DPI kutularina karsi genelde yetmiyor.
         private bool UsesFakePacket()
         {
             if (!_cfg.FakeBadSum && !_cfg.FakeTtl && !_cfg.FakeWrongSeq) return false;
             return _cfg.TlsMode.Contains("fake") || _cfg.HttpMode.Contains("fake");
         }
 
-        /// <summary>Cok satirli bir mesajin dar alt satira sigan ilk satiri.</summary>
+        // Cok satirli mesajin alt satira sigan ilk parcasi.
         private static string FirstLine(string s)
         {
             if (string.IsNullOrEmpty(s)) return string.Empty;
@@ -1202,11 +1185,8 @@ namespace Etodpx.Ui
             return i < 0 ? head : head + "  (ayrıntı için pencereye bak)";
         }
 
-        /// <summary>
-        /// Alt satir yalnizca soylenecek bir sey varsa doluyor. Hangi ayarin
-        /// etkin oldugunu zaten alt baslik yaziyor; ayni cumleyi iki kez
-        /// gostermek arayuzu bosuna kalabaliklastiriyordu.
-        /// </summary>
+        // Alt satir yalnizca soylenecek bir sey varsa doluyor - hangi ayarin etkin
+        // oldugunu zaten alt baslik yaziyor.
         private string FooterInfo()
         {
             if (_repairFailed && !string.IsNullOrEmpty(_lastRepairMessage))

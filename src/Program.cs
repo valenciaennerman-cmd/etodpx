@@ -1,4 +1,4 @@
-﻿// etodpx - giris noktasi
+﻿// Giris noktasi: tek ornek kilidi, yonetici kontrolu, motor + pencere.
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -91,11 +91,9 @@ namespace Etodpx
             catch { return false; }
         }
 
-        /// <summary>
-        /// Windows, ZIP'in icinden cift tiklanan exe'yi gecici bir klasore tek
-        /// basina kopyalayabilir. Bu durumda kullaniciya "DLL bulunamadi" demek
-        /// yerine arsivi nasil acacagini daha motor baslamadan anlatiyoruz.
-        /// </summary>
+        // ZIP'in icinden cift tiklanan exe'yi Windows gecici bir klasore tek basina
+        // kopyalayabiliyor. "DLL bulunamadi" demek yerine ne yapmasi gerektigini
+        // daha motor baslamadan soyluyoruz.
         private static bool ValidatePackage(string dir)
         {
             string[] required = { "WinDivert.dll", "WinDivert64.sys" };
@@ -113,11 +111,7 @@ namespace Etodpx
             return true;
         }
 
-        /// <summary>
-        /// Paket isleme gecikmesinin oynamamasi icin sureci biraz onceliklendirip
-        /// cop toplayiciyi dusuk gecikme kipine aliyoruz. Paket yolunda zaten
-        /// tahsis yok; bu ayar yalnizca arayuz kaynakli duraklamalari da keser.
-        /// </summary>
+        // Paket yolunda tahsis zaten yok; bu ayar arayuz kaynakli duraklamalari keser.
         private static void TuneProcess(Config cfg)
         {
             try

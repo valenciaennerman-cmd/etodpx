@@ -1,21 +1,14 @@
-﻿// etodpx - ortadaki buyuk baslat/durdur dugmesi
+﻿// Ortadaki buyuk baslat/durdur dugmesi.
 //
-// Surekli donen animasyonlar hakkinda:
-// WPF bir animasyon calisirken ekranin yenileme hizinda kare uretir. 240 Hz
-// bir monitorde yavas bir parilti icin saniyede 240 kare cizmek saf israftir -
-// olculdu: animasyon kapaliyken %0, acikken %22 islemci. Bu yuzden her
-// animasyona Timeline.DesiredFrameRate ile tavan konuyor. Yavas bir opaklik
-// gecisi 15 karede de akici gorunur.
+// Her animasyonda Timeline.DesiredFrameRate var: WPF aksi halde ekranin yenileme
+// hizinda kare uretiyor ve 240 Hz bir monitorde yavas bir parilti icin saniyede
+// 240 kare cizmek bosuna islemci yakiyor. Parilti de DropShadowEffect degil
+// radyal gradyan - blur her karede yeniden hesaplaniyor, gradyan hesaplanmiyor.
 //
-// Parilti ayrica DropShadowEffect yerine radyal gradyan: blur her karede
-// yeniden hesaplanir, gradyan hesaplanmaz.
-//
-// Simgenin konumu hakkinda:
-// Path elemanini HorizontalAlignment=Center ile ortalamak GUVENILIR DEGIL -
-// WPF onu geometrinin sinir kutusuna gore yerlestirir ve negatif koordinatli
-// bir geometride simge gorunur sekilde kayar (olculdu: 10 px sola, 10.5 px
-// yukari). Bu yuzden Path kutuyu tamamen kapliyor ve geometri koordinatlari
-// kutu icinde MUTLAK yaziliyor; merkez (96,96).
+// Path'i HorizontalAlignment=Center ile ortalamak ise ise yaramiyor: WPF onu
+// geometrinin sinir kutusuna gore yerlestirdigi icin negatif koordinatli bir
+// geometride simge gozle gorulur sekilde kayiyor. Path kutuyu tamamen kapliyor,
+// koordinatlar kutu icinde mutlak; merkez (96,96).
 using System;
 using System.Globalization;
 using System.Windows;
@@ -127,7 +120,7 @@ namespace Etodpx.Ui
             };
         }
 
-        /// <summary>Guc simgesi: ustte bosluklu yay + dikey cizgi. Merkez (96,96).</summary>
+        // Ustte bosluklu yay + dikey cizgi.
         private static string BuildGlyph()
         {
             var ci = CultureInfo.InvariantCulture;
@@ -163,7 +156,7 @@ namespace Etodpx.Ui
             if (!_isOn) _glyph.Stroke = dim;
         }
 
-        /// <summary>on=true ise halka vurgu rengine gecer ve hale nefes almaya baslar.</summary>
+        // Acikken halka vurgu rengine gecer, hale nefes almaya baslar.
         public void SetActive(bool on, Color glowColor)
         {
             _isOn = on;
@@ -204,7 +197,7 @@ namespace Etodpx.Ui
                 RepeatBehavior = RepeatBehavior.Forever,
                 EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
             };
-            // Surekli calisan tek animasyon bu; kare tavani en cok burada onemli.
+            // Surekli calisan tek animasyon; kare tavani asil burada onemli.
             Timeline.SetDesiredFrameRate(pulse, 15);
             _glow.BeginAnimation(OpacityProperty, pulse);
         }
@@ -215,7 +208,7 @@ namespace Etodpx.Ui
             _glow.Opacity = 0;
         }
 
-        /// <summary>Pencere gizlendiginde animasyonu tamamen durdurur.</summary>
+        // Pencere gizlendiginde animasyon tamamen durur.
         public void SetAnimationsEnabled(bool enabled)
         {
             if (enabled) { if (_isOn) StartPulse(); }
@@ -226,7 +219,7 @@ namespace Etodpx.Ui
             }
         }
 
-        /// <summary>Baslatma/durdurma sirasinda kisa bir bekleme gorunumu.</summary>
+        // Baslatma/durdurma sirasindaki bekleme gorunumu.
         public void SetBusy(bool busy)
         {
             IsEnabled = !busy;

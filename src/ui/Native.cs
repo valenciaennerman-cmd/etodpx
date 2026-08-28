@@ -1,4 +1,4 @@
-﻿// etodpx - pencere gorunumu icin kucuk Win32 dokunuslari
+﻿// Pencere gorunumu icin kucuk Win32 dokunuslari.
 using System;
 using System.Runtime.InteropServices;
 
@@ -15,7 +15,7 @@ namespace Etodpx.Ui
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
-        /// <summary>Win11 yuvarlak kose + tema uyumlu pencere kenarligi.</summary>
+        // Win11 yuvarlak kose + kenarlik rengi.
         public static void ApplyChrome(IntPtr hwnd, bool dark, uint borderBgr)
         {
             if (hwnd == IntPtr.Zero) return;
@@ -33,7 +33,7 @@ namespace Etodpx.Ui
             catch { /* eski Windows: sessizce gecilir */ }
         }
 
-        /// <summary>System.Windows.Media.Color -> DWM icin 0x00BBGGRR.</summary>
+        // Color -> DWM'nin bekledigi 0x00BBGGRR.
         public static uint ToBgr(System.Windows.Media.Color c)
         {
             return (uint)(c.R | (c.G << 8) | (c.B << 16));
@@ -42,11 +42,8 @@ namespace Etodpx.Ui
         [DllImport("psapi.dll")]
         private static extern bool EmptyWorkingSet(IntPtr hProcess);
 
-        /// <summary>
-        /// Pencere tepsiye indiginde WPF cizim kaynaklarini bellekte tutmanin
-        /// anlami kalmaz. Sayfalar geri cagrilabilir; motor tamponlari unmanaged
-        /// oldugu icin paket yolu bundan etkilenmez.
-        /// </summary>
+        // Tepsideyken WPF cizim kaynaklarini bellekte tutmanin anlami yok. Motor
+        // tamponlari unmanaged oldugu icin paket yolu bundan etkilenmiyor.
         public static void TrimWorkingSet()
         {
             try

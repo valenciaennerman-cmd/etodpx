@@ -1,6 +1,5 @@
-﻿// etodpx - TLS ClientHello (SNI) ve HTTP Host konumlandirma
-// Amac: payload icinde alan adinin TAM konumunu bulmak, boylece TCP'yi
-// tam alan adinin ortasindan bolebilelim. DPI icin en zor durum budur.
+﻿// SNI / HTTP Host konumlandirma. Alan adinin payload icindeki tam yerini
+// buluyoruz ki TCP'yi tam ortasindan bolebilelim - DPI icin en zor durum.
 using System;
 
 namespace Etodpx.Engine
@@ -14,11 +13,8 @@ namespace Etodpx.Engine
 
     internal static unsafe class Hostname
     {
-        // ---------------------------------------------------------------- TLS SNI
-        /// <summary>
-        /// TLS ClientHello icindeki SNI alan adini bulur.
-        /// Tum uzunluk alanlari sinir kontrolunden gecer; bozuk paket -> Found=false.
-        /// </summary>
+        // --- TLS SNI
+        // Butun uzunluk alanlari sinir kontrolunden gecer; bozuk paket -> Found=false.
         public static HostLocation FindSni(byte* p, int len)
         {
             HostLocation r = default(HostLocation);
@@ -73,10 +69,9 @@ namespace Etodpx.Engine
             return r;
         }
 
-        // --------------------------------------------------------------- HTTP Host
+        // --- HTTP Host
         private static readonly byte[] NeedleHost = { (byte)'h', (byte)'o', (byte)'s', (byte)'t', (byte)':' };
 
-        /// <summary>HTTP istegindeki Host basliginin degerini bulur.</summary>
         public static HostLocation FindHttpHost(byte* p, int len)
         {
             HostLocation r = default(HostLocation);
@@ -107,16 +102,12 @@ namespace Etodpx.Engine
             }
         }
 
-        /// <summary>
-        /// HTTP baslik adlari buyuk/kucuk harf duyarsizdir. Gercek Host: basligini
-        /// hOSt: yaparak basit, harfe duyarli DPI imzalarini bozar.
-        ///
-        /// DIKKAT: bu, YAKALANAN paketin tamponunu yerinde degistirir. Paketi
-        /// kendimiz gondermezsek WorkerLoop onu checksum'i YENIDEN HESAPLAMADAN
-        /// enjekte eder; degismis yuk ile eski checksum bozuk paket demektir ve
-        /// sunucu onu atar. Bu yuzden degisiklik geri alinabilir olmali.
-        /// </summary>
-        /// <returns>Degistirilen ofset, degisiklik yapilmadiysa -1.</returns>
+        // "Host:" -> "hOSt:". Baslik adlari harfe duyarsiz oldugu icin sunucu
+        // aldirmaz, harfe duyarli DPI imzalari bozulur.
+        //
+        // Yakalanan paketin tamponunu yerinde degistirir. Paketi kendimiz
+        // gondermezsek WorkerLoop onu eski checksum ile enjekte eder ve sunucu
+        // atar - bu yuzden degisiklik geri alinabilir olmali. Doner: ofset ya da -1.
         public static int RewriteHttpHostCase(byte* p, int len, out uint saved)
         {
             saved = 0;
@@ -138,19 +129,14 @@ namespace Etodpx.Engine
             }
         }
 
-        /// <summary>RewriteHttpHostCase degisikligini geri alir.</summary>
         public static void RestoreHttpHostCase(byte* p, int at, uint saved)
         {
             if (at >= 0) Packet.Write32(p + at, saved);
         }
 
-        // ------------------------------------------------------- bolme konumu secimi
+        // --- bolme konumu secimi
 
-        /// <summary>
-        /// Alan adinin ikinci seviye etiketinin (SLD) ortasini dondurur.
-        /// "www.youtube.com" -> "youtube" ortasi. DPI'in imza eslemesini en cok
-        /// bozan konum burasidir.
-        /// </summary>
+        // "www.youtube.com" -> "youtube" ortasi. Imza eslemesini en cok bozan konum.
         public static int MidSld(byte* p, int hostOff, int hostLen)
         {
             if (hostLen <= 0) return hostOff;

@@ -52,7 +52,7 @@ namespace Etodpx.Preview
             return app.Run();
         }
 
-        /// <summary>Motoru calistirmadan "koruma acik" gorunumunu kurar.</summary>
+        // Motoru calistirmadan "koruma acik" gorunumunu kurar.
         private static void FakeRunningState(MainWindow win, DpiEngine engine)
         {
             try
@@ -72,7 +72,7 @@ namespace Etodpx.Preview
             }
         }
 
-        /// <summary>Hata durumundaki duzeltme dugmesini surucuye dokunmadan gosterir.</summary>
+        // Hata durumundaki duzeltme dugmesini surucuye dokunmadan gosterir.
         private static void FakeErrorState(MainWindow win)
         {
             try

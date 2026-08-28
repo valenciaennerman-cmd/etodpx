@@ -1,4 +1,4 @@
-﻿// etodpx - bildirim alani simgesi. Pencere kapatilmadan arka planda calisabilsin diye.
+﻿// Bildirim alani simgesi: pencere kapanmadan arka planda calisabilsin diye.
 using System;
 using System.Drawing;
 using System.Reflection;
@@ -51,9 +51,8 @@ namespace Etodpx.Ui
 
             _window.StateChanged += OnStateChanged;
 
-            // Motor kendi kendine durursa (surucu hatasi vb.) surec ayakta kalir.
-            // Pencere tepsiye indirilmisse kullanicinin bunu fark etmesinin hicbir
-            // yolu yok: korumasiz gezmeye devam eder. Bu yuzden baloncukla soyluyoruz.
+            // Motor kendi kendine durursa surec ayakta kalir. Pencere tepsideyse
+            // kullanici bunu fark edemez ve korumasiz gezer; baloncukla soyluyoruz.
             _engine.Fault += OnEngineFault;
 
             _poll = new System.Windows.Forms.Timer { Interval = 1000 };

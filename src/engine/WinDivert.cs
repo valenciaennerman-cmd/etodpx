@@ -1,4 +1,4 @@
-﻿// etodpx - WinDivert 2.x interop layer
+﻿// WinDivert 2.x interop layer
 // Sadece cekirdek surucusuyle konusan ince katman. Hot-path'te allocation yok.
 using System;
 using System.Runtime.InteropServices;
@@ -47,11 +47,9 @@ namespace Etodpx.Engine
         NoReplace = 0x0020
     }
 
-    /// <summary>
-    /// WINDIVERT_ADDRESS 80 bayttir ve icinde bitfield'lar var. Bitfield'lari
-    /// C# tarafinda tasimak yerine ham dword'u tutup maskeliyoruz; boylece
-    /// struct layout'u surum farklarindan etkilenmiyor.
-    /// </summary>
+    // WINDIVERT_ADDRESS 80 bayttir ve icinde bitfield'lar var. Bitfield'lari
+    // C# tarafinda tasimak yerine ham dword'u tutup maskeliyoruz; boylece
+    // struct layout'u surum farklarindan etkilenmiyor.
     [StructLayout(LayoutKind.Sequential, Size = 80)]
     internal struct DivertAddress
     {

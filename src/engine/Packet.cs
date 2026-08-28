@@ -1,11 +1,10 @@
-﻿// etodpx - ham paket ayristirma / kurma yardimcilari
-// Hicbir fonksiyon allocation yapmaz; hepsi pointer uzerinde calisir.
+﻿// Ham paket ayristirma / kurma. Hepsi pointer uzerinde, tahsis yok.
 using System;
 using System.Runtime.CompilerServices;
 
 namespace Etodpx.Engine
 {
-    /// <summary>Bir paketin cozumlenmis gorunumu (offset'ler paket basina gore).</summary>
+    // Cozumlenmis paket gorunumu; ofsetler paket basina gore.
     internal unsafe struct PacketView
     {
         public byte* Base;
@@ -28,7 +27,7 @@ namespace Etodpx.Engine
         public const byte ProtoTcp = 6;
         public const byte ProtoUdp = 17;
 
-        // ---- endian yardimcilari -------------------------------------------------
+        // --- endian yardimcilari
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ushort Read16(byte* p) { return (ushort)((p[0] << 8) | p[1]); }
 
@@ -47,9 +46,9 @@ namespace Etodpx.Engine
             p[0] = (byte)(v >> 24); p[1] = (byte)(v >> 16); p[2] = (byte)(v >> 8); p[3] = (byte)v;
         }
 
-        // ---- IP / TCP / UDP ayristirma ------------------------------------------
+        // --- IP / TCP / UDP ayristirma
 
-        /// <summary>Paketi cozumler. Bozuk/desteklenmeyen paketlerde false doner.</summary>
+        // Bozuk ya da desteklenmeyen paketlerde false doner.
         public static bool Parse(byte* pkt, int len, out PacketView v)
         {
             v = default(PacketView);
@@ -77,9 +76,8 @@ namespace Etodpx.Engine
             }
             else return false;
 
-            // IP basliginda beyan edilen uzunluk tampondaki uzunluktan kisa olabilir
-            // (surucu dolgusu, katman farklari). Yuk uzunlugunu beyana gore kirpmazsak
-            // dolgu baytlarini veri sanip yanlis yerden boleriz.
+            // Beyan edilen uzunluk tampondakinden kisa olabilir (surucu dolgusu).
+            // Kirpmazsak dolgu baytlarini veri sanip yanlis yerden boleriz.
             int declared = v.IsV6 ? 40 + Read16(pkt + 4) : Read16(pkt + 2);
             if (declared >= v.IpHeaderLen && declared < len) len = declared;
             v.Length = len;
@@ -105,7 +103,7 @@ namespace Etodpx.Engine
             return true;
         }
 
-        // ---- TCP alan erisimleri -------------------------------------------------
+        // --- TCP alan erisimleri
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static uint TcpSeq(byte* pkt, int l4) { return Read32(pkt + l4 + 4); }
 
@@ -121,9 +119,9 @@ namespace Etodpx.Engine
         public const byte TcpFin = 0x01, TcpSyn = 0x02, TcpRst = 0x04,
                           TcpPsh = 0x08, TcpAck = 0x10, TcpUrg = 0x20;
 
-        // ---- IP uzunluk / TTL ----------------------------------------------------
+        // --- IP uzunluk / TTL
 
-        /// <summary>IPv4 total-length ya da IPv6 payload-length alanini gunceller.</summary>
+        // IPv4 total-length / IPv6 payload-length.
         public static void SetIpLength(byte* pkt, bool isV6, int totalLen, int ipHdrLen)
         {
             if (isV6) Write16(pkt + 4, (ushort)(totalLen - ipHdrLen));
@@ -136,18 +134,18 @@ namespace Etodpx.Engine
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static byte GetTtl(byte* pkt, bool isV6) { return pkt[isV6 ? 7 : 8]; }
 
-        /// <summary>IPv4 kimlik alanini degistirir (sahte paketlerin ayrilmasi icin).</summary>
+        // Sahte paketler birbirinden ayrilsin diye.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void SetIpId(byte* pkt, bool isV6, ushort id) { if (!isV6) Write16(pkt + 4, id); }
 
-        // ---- kopyalama -----------------------------------------------------------
+        // --- kopyalama
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void Copy(byte* dst, byte* src, int n)
         {
             Buffer.MemoryCopy(src, dst, n, n);
         }
 
-        /// <summary>Buyuk/kucuk harf duyarsiz ASCII karsilastirma (payload icinde arama icin).</summary>
+        // Harfe duyarsiz ASCII arama.
         public static int IndexOfCI(byte* hay, int hayLen, byte[] needleLower, int startAt)
         {
             int nl = needleLower.Length;

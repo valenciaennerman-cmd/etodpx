@@ -1,4 +1,4 @@
-﻿// etodpx - sayaclar. Sicak yolda sadece Interlocked.Increment var.
+﻿// Sayaclar. Sicak yolda yalnizca Interlocked.Increment.
 using System;
 using System.Threading;
 

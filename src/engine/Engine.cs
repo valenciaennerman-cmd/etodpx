@@ -1,10 +1,9 @@
-﻿// etodpx - motor: filtre kurulumu, tutamaklar, is parcaciklari
+﻿// Motor: filtre kurulumu, tutamaklar, is parcaciklari.
 //
-// Tasarimin ozu: cekirdek filtresini olabildigince DAR tutmak.
-// Yalnizca yeni bir baglantinin ILK paketi (TLS ClientHello / HTTP istek satiri /
-// QUIC Initial) kullanici alanina gelir. Ping (ICMP), oyun trafigi, indirme,
-// yukleme ve genel olarak akislarin geri kalani cekirdegi hic terk etmez.
-// Bu yuzden gecikme ve hiz kaybi olculebilir duzeyde degildir.
+// Butun tasarim cekirdek filtresini dar tutmak uzerine kurulu. Kullanici alanina
+// yalnizca yeni bir baglantinin ilk paketi geliyor (ClientHello / HTTP istek
+// satiri / QUIC Initial); ping, oyun trafigi, indirme ve yukleme cekirdegi hic
+// terk etmiyor.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -45,12 +44,12 @@ namespace Etodpx.Engine
         public string ActiveQuicFilter { get; private set; }
         public string QuicWarning { get; private set; }
 
-        /// <summary>Beklenmedik bir hata olustugunda tetiklenir (arayuze mesaj tasir).</summary>
+        // Beklenmedik hatayi arayuze tasir.
         public event Action<string> Fault;
 
         public DpiEngine(Config cfg) { _cfg = cfg; }
 
-        // ============================================================ yasam dongusu
+        // --- yasam dongusu
 
         public void Start()
         {
@@ -119,8 +118,7 @@ namespace Etodpx.Engine
             if (_tcpHandle != WinDivert.InvalidHandle) WinDivert.WinDivertShutdown(_tcpHandle, WinDivert.ShutdownBoth);
             if (_quicHandle != WinDivert.InvalidHandle) WinDivert.WinDivertShutdown(_quicHandle, WinDivert.ShutdownBoth);
 
-            // Ortak son tarih: is parcacigi basina beklemek, kapanisi cok is
-            // parcacigiyla uzatirdi. Shutdown cagrisi zaten hepsini uyandirir.
+            // Ortak son tarih; is parcacigi basina beklemek kapanisi uzatirdi.
             var deadline = Environment.TickCount + 1500;
             bool allExited = true;
             foreach (var t in _threads)
@@ -144,16 +142,13 @@ namespace Etodpx.Engine
                 return;
             }
 
-            // Bir is parcacigi hala WinDivertRecv icinde bekliyor. Handle'i simdi
-            // kapatmak, kapatilmis bir tutamak uzerinde bekleyen cagri birakir -
-            // tanimsiz davranis. Kapatmayi arka plana aliyoruz: arayuz beklemez,
-            // tutamak ise ancak herkes cikinca kapanir.
+            // Bir is parcacigi hala WinDivertRecv icinde. Tutamagi simdi kapatmak
+            // onun altindan zemini cekmek olur; kapatmayi arka plana aliyoruz.
             ThreadPool.QueueUserWorkItem(delegate
             {
                 foreach (var t in pending)
                 {
-                    // Shutdown normalde Recv'i hemen uyandirir. Yine de bir surucu
-                    // gecikirse tutamagi calisan thread'in altindan kapatmayiz.
+                    // Shutdown Recv'i uyandirir; surucu gecikirse yine de bekliyoruz.
                     try { t.Join(); }
                     catch { }
                 }
@@ -169,7 +164,7 @@ namespace Etodpx.Engine
 
         public void Dispose() { Stop(); }
 
-        // ================================================================ tutamak
+        // --- tutamak
 
         private IntPtr Open(string filter)
         {
@@ -228,10 +223,8 @@ namespace Etodpx.Engine
                            "Windows Güvenliği > Cihaz güvenliği > Çekirdek yalıtımı >\n" +
                            "Bellek bütünlüğü açıksa kapatıp bilgisayarı yeniden başlatın.";
                 case ErrorServiceDisabled:
-                    // Makinede eski bir WinDivert servisi kayitli ve "Devre Disi"
-                    // yapilmis. Genelde onceki bir GoodbyeDPI/zapret kurulumundan
-                    // ya da antivirus mudahalesinden kalir. Silinince WinDivert
-                    // kendini sifirdan kurar - kullaniciya komutu aynen veriyoruz.
+                    // Onceki bir GoodbyeDPI/zapret kurulumundan ya da antivirusten
+                    // kalan devre disi servis. Silinince WinDivert kendini kurar.
                     return "Makinede devre dışı bırakılmış eski bir WinDivert servisi var.\n\n" +
                            "Yönetici komut isteminde şunu çalıştırıp etodpx'i yeniden açın:\n" +
                            "    sc stop WinDivert\n" +
@@ -241,7 +234,7 @@ namespace Etodpx.Engine
             }
         }
 
-        // ============================================================ is parcaciklari
+        // --- is parcaciklari
 
         private void SpawnWorker(IntPtr handle, bool quic, int seed, int generation)
         {
@@ -274,8 +267,7 @@ namespace Etodpx.Engine
                         if (!_running || err == ErrorNoData) break;
                         if (err == ErrorInsufficientBuffer)
                         {
-                            // Paket tampona sigmadi ve kuyruktan dustu. Normalde
-                            // erisilmez (tampon 64 KB) ama sessizce yutmuyoruz.
+                            // Paket 64 KB tampona sigmadi. Olmamali, ama sessiz gecmiyoruz.
                             _stats.BumpSendError();
                             continue;
                         }
@@ -345,11 +337,7 @@ namespace Etodpx.Engine
             if (h != null) { try { h(msg); } catch { } }
         }
 
-        /// <summary>
-        /// Arizayi diske yazar. Motor kendi kendine durdugunda pencere kapaliysa
-        /// ya da tepsideyse geriye hicbir iz kalmiyordu; sorunu bildiren kullanici
-        /// da "birden calismaz oldu" demekten oteye gidemiyordu.
-        /// </summary>
+        // Motor kendi kendine durdugunda pencere tepsideyse geriye iz kalmiyordu.
         private static void LogFault(string msg)
         {
             try
@@ -364,7 +352,7 @@ namespace Etodpx.Engine
             catch { }
         }
 
-        // ================================================================= filtreler
+        // --- filtreler
 
         private string PrivateExclusion()
         {
@@ -377,9 +365,8 @@ namespace Etodpx.Engine
                       + "(ip.DstAddr < 127.0.0.0 or ip.DstAddr > 127.255.255.255) and "
                       + "(ip.DstAddr < 169.254.0.0 or ip.DstAddr > 169.254.255.255))";
 
-            // IPv6 tarafi: fe80::/10 (link-local) ve fc00::/7 (unique local).
-            // Bu ifade surucu tarafindan reddedilirse aday merdiveni yalniz-IPv4
-            // surumune duser, davranis bozulmaz.
+            // fe80::/10 (link-local) ve fc00::/7 (unique local). Surucu bu ifadeyi
+            // reddederse aday merdiveni yalniz-IPv4 surumune duser.
             string v6 = "((ipv6.DstAddr < fe80:: or ipv6.DstAddr > febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff) and "
                       + "(ipv6.DstAddr < fc00:: or ipv6.DstAddr > fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff))";
 
@@ -400,12 +387,10 @@ namespace Etodpx.Engine
 
         private string TlsClause()
         {
-            // 0x16 = handshake kaydi, 0x03 = TLS surum ailesi, payload[5] = 0x01 -> ClientHello
-            // Payload[2] <= 0x04 : kayit surumunun alt baytinin makul araligi
-            // Payload[3] <= 0x40 : TLS kaydi en fazla 16 KB olabilir
-            // Ikisi de ucuz ve rastgele veriyle yanlis eslesmeyi 256 kat azaltir.
-            // Tam yapisal dogrulama (kayit/el sikisma uzunlugu tutarliligi)
-            // kullanici tarafinda IsClientHello() icinde yapilir.
+            // 0x16 handshake, 0x03 surum ailesi, payload[5]=0x01 ClientHello.
+            // Payload[2] <= 0x04 ve payload[3] <= 0x40 (kayit en fazla 16 KB) ucuz
+            // kontroller; rastgele veriyle yanlis eslesmeyi 256 kat azaltiyorlar.
+            // Yapisal dogrulama IsClientHello() icinde.
             return "(tcp.DstPort == 443 and tcp.Payload[0] == 0x16 and tcp.Payload[1] == 0x03 "
                  + "and tcp.Payload[2] <= 0x04 and tcp.Payload[3] <= 0x40 and tcp.Payload[5] == 0x01)";
         }
@@ -450,12 +435,7 @@ namespace Etodpx.Engine
         private bool TlsActive() { return _cfg.EnableTls && ModeActive(_cfg.TlsMode); }
         private bool HttpActive() { return _cfg.EnableHttp && ModeActive(_cfg.HttpMode); }
 
-        /// <summary>
-        /// En dardan en genise dogru aday filtreler. Ilk derlenebilen kullanilir.
-        /// Genis olana dusersek de dogruluk bozulmaz; sadece kullanici alanina biraz
-        /// daha fazla paket gelir (yine de yalnizca 80/443 giden veri paketleri).
-        /// </summary>
-        /// <summary>IPv6 sozdizimi reddedilirse kullanilacak yalniz-IPv4 surumu.</summary>
+        // IPv6 sozdizimi reddedilirse bu surum kullanilir.
         private string PrivateExclusionV4Only()
         {
             if (!_cfg.SkipPrivateRanges) return null;
@@ -467,6 +447,8 @@ namespace Etodpx.Engine
                  + "(ip.DstAddr < 169.254.0.0 or ip.DstAddr > 169.254.255.255)))";
         }
 
+        // En dardan en genise; ilk derlenebilen kullanilir. Genise dusmek dogrulugu
+        // bozmaz, yalnizca kullanici alanina biraz daha fazla paket gelir.
         internal string[] BuildTcpFilterCandidates()
         {
             // !tcp.Syn : TCP Fast Open ile gelen yuklu SYN paketleri hic gelmesin.
@@ -484,14 +466,13 @@ namespace Etodpx.Engine
 
         internal string[] BuildQuicFilterCandidates()
         {
-            // QUIC Initial: uzun basik (0xc0..0xcf) ve dolgu nedeniyle daima buyuk paket.
-            // Kisa basikli veri paketleri (0x40..0x7f) bu filtreye hic takilmaz.
+            // Initial uzun baslikli (0xc0..0xcf) ve dolgu yuzunden hep buyuk paket.
+            // Kisa baslikli veri paketleri (0x40..0x7f) bu filtreye takilmaz.
             string baseExpr = "outbound and !impostor and !loopback and udp and udp.DstPort == 443 and udp.PayloadLength >= 1200";
-            // Yalnizca ilk bayta bakmak YETMEZ: 0xc0-0xcf araligi rastgele bir
-            // baytin %6'sina denk gelir. UDP/443 uzerinden gecen QUIC olmayan
-            // trafik (ornegin Steam Datagram Relay - CS2 buradan gecer) yanlislikla
-            // yakalanir ve oyun paketine sahte paket enjekte edilir -> ping sicramasi.
-            // Bu yuzden QUIC SURUM alani da dogrulanir: v1 (0x00000001) veya v2.
+            // Ilk bayt tek basina yetmiyor: 0xc0-0xcf rastgele bir baytin %6'si.
+            // UDP/443'ten gecen QUIC disi trafik (Steam Datagram Relay - CS2 oradan
+            // gecer) yakalanip oyun paketine sahte paket enjekte ediliyordu. Surum
+            // alani da dogrulaniyor: v1 (0x00000001) ya da v2.
             string head = "((udp.Payload[0] >= 0xc0 and udp.Payload[0] <= 0xcf and "
                         + "udp.Payload32[1] == 0x00000001) or "
                         + "(udp.Payload[0] >= 0xd0 and udp.Payload[0] <= 0xdf and "

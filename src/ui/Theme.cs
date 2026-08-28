@@ -1,5 +1,4 @@
-﻿// etodpx - renk paleti
-// Tek tema var: karanlik. Aydinlik mod bilerek kaldirildi.
+﻿// Renk paleti. Tek tema: karanlik.
 using System.Windows.Media;
 
 namespace Etodpx.Ui

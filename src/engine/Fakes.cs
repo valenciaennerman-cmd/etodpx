@@ -1,7 +1,6 @@
-﻿// etodpx - sahte (decoy) yuk uretimi
-// Sahte paketler DPI'in gordugu ilk paket olur; gercek sunucuya asla ulasmaz
-// (bozuk checksum) ya da yolda oler (dusuk TTL). Icerik zararsiz bir alan adi
-// tasir, boylece yanlislikla ulasirsa bile kimseyi rahatsiz etmez.
+﻿// Sahte (decoy) yuk uretimi. DPI'in gordugu ilk paket bunlar olur; sunucuya
+// ya hic ulasmazlar (bozuk checksum) ya da yolda olurler (dusuk TTL). Icerik
+// zararsiz bir alan adi tasir - yanlislikla ulasirsa kimse rahatsiz olmasin.
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -19,7 +18,7 @@ namespace Etodpx.Engine
             return b;
         }
 
-        /// <summary>Gecerli gorunumlu, zararsiz SNI tasiyan bir TLS ClientHello uretir.</summary>
+        // Zararsiz SNI tasiyan, gecerli gorunumlu ClientHello.
         public static byte[] BuildTlsClientHello(string sni)
         {
             if (string.IsNullOrEmpty(sni)) sni = "www.iana.org";
@@ -78,7 +77,7 @@ namespace Etodpx.Engine
             return rec.ToArray();
         }
 
-        /// <summary>Zararsiz gorunumlu bir HTTP GET istegi uretir.</summary>
+        // Zararsiz gorunumlu GET istegi.
         public static byte[] BuildHttpRequest(string host)
         {
             if (string.IsNullOrEmpty(host)) host = "www.iana.org";
@@ -92,10 +91,7 @@ namespace Etodpx.Engine
             return Encoding.ASCII.GetBytes(s);
         }
 
-        /// <summary>
-        /// QUIC Initial gorunumlu sahte paket. DCID rastgele oldugu icin sunucu
-        /// tarafinda hicbir durum olusturmaz, sessizce dusulur.
-        /// </summary>
+        // DCID rastgele oldugu icin sunucu tarafinda durum olusturmaz.
         public static byte[] BuildQuicInitial(int totalLen)
         {
             if (totalLen < 1200) totalLen = 1200;
@@ -116,7 +112,7 @@ namespace Etodpx.Engine
             return b.ToArray();
         }
 
-        // ---- kucuk yardimcilar --------------------------------------------------
+        // --- kucuk yardimcilar
         private static void AddExt(List<byte> dst, int type, byte[] data)
         {
             dst.AddRange(Be16(type));
