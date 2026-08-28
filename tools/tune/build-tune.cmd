@@ -15,7 +15,7 @@ if exist "bin\etodpx-tune.exe" ren "bin\etodpx-tune.exe" "etodpx-tune.old.exe" >
   /out:"bin\etodpx-tune.exe" ^
   /main:Etodpx.Tune.Tuner ^
   /win32manifest:"src\app.manifest" ^
-  "src\Config.cs" "src\engine\*.cs" "tools\tune\Tune.cs"
+  "src\AssemblyInfo.cs" "src\Config.cs" "src\engine\*.cs" "tools\tune\Tune.cs"
 
 if errorlevel 1 (
   echo   DERLEME BASARISIZ

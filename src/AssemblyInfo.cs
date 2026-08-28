@@ -1,11 +1,8 @@
-﻿// etodpx - derleme kimligi.
+﻿// Derleme kimligi. Bu nitelikler olmadan Ozellikler > Ayrintilar bos gorunur ve
+// kullanici hangi surumu indirdigini goremez.
 //
-// Depoda derlenmis exe yok; kullanici indirdigi dosyanin hangi surum
-// oldugunu ancak Ozellikler > Ayrintilar penceresinden gorebilir. Bu
-// nitelikler olmadan orasi bos gorunur.
-//
-// Surum degistirirken src\app.manifest icindeki assemblyIdentity da
-// ayni degere cekilmeli.
+// Surum degisince src\app.manifest icindeki assemblyIdentity de ayni deger
+// olmali - yayin denetimi ikisini karsilastiriyor.
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -13,6 +10,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyDescription("Windows icin DPI atlatma araci")]
 [assembly: AssemblyProduct("etodpx")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 valenciaennerman-cmd - MIT")]
-[assembly: AssemblyVersion("1.6.0.0")]
-[assembly: AssemblyFileVersion("1.6.0.0")]
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
 [assembly: ComVisible(false)]

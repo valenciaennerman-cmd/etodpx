@@ -1,4 +1,4 @@
-# etodpx - yayin oncesi denetim
+﻿# etodpx - yayin oncesi denetim
 #
 # Depoyu GitHub'a atmadan once calistir. Yaptigi sey su: git'in gercekten
 # takip edecegi dosyalari BOS bir klasore kopyalar ve orada sifirdan derler.
@@ -55,6 +55,24 @@ T 'README var' { if (Test-Path 'README.md') { @('ok', "$([math]::Round((Get-Item
 T 'uygulama simgesi depoda' {
     if (Test-Path 'assets\etodpx.ico') { @('ok', "$([math]::Round((Get-Item assets\etodpx.ico).Length/1KB,1)) KB") }
     else { @('HATA', 'assets\etodpx.ico yok - yeni klonda simge olmaz') }
+}
+# Takip edilmeyen bir .cs dosyasi burada derlenir ama temiz klonda YOKTUR.
+# Eksigi derleme hatasi vermiyorsa (ornegin yalnizca nitelik iceriyorsa)
+# fark hic goze carpmaz; surumsuz exe boyle cikti.
+T 'butun kaynak dosyalari git takibinde' {
+    if (-not $hasGit) { return @('uyari', 'git yok') }
+    $tracked = @(git ls-files 'src/*.cs' 'tools/*.cs') | ForEach-Object { $_.Replace('/', '\') }
+    $onDisk = @(Get-ChildItem -Recurse -Filter *.cs -Path 'src', 'tools' |
+                ForEach-Object { $_.FullName.Substring($Root.Length + 1) })
+    $missing = @($onDisk | Where-Object { $tracked -notcontains $_ })
+    if ($missing.Count -eq 0) { @('ok', "$($onDisk.Count) dosya takipte") }
+    else { @('HATA', 'takip edilmiyor: ' + ($missing -join ', ')) }
+}
+T 'surum numaralari tutarli' {
+    $ai = (Select-String -Path 'src\AssemblyInfo.cs' -Pattern 'AssemblyFileVersion\("([^"]+)"' -ErrorAction SilentlyContinue).Matches.Groups[1].Value
+    $mf = (Select-String -Path 'src\app.manifest' -Pattern 'assemblyIdentity version="([^"]+)"').Matches.Groups[1].Value
+    if (-not $ai) { return @('HATA', 'AssemblyInfo.cs okunamadi') }
+    if ($ai -ne $mf) { @('HATA', "AssemblyInfo $ai <> manifest $mf") } else { @('ok', $ai) }
 }
 
 # git'in takip edecegi dosya listesini cikar (gecici depo, mevcut .git'e dokunmaz)
@@ -164,6 +182,16 @@ T 'simge exe icine gomuldu' {
     Add-Type -AssemblyName System.Drawing
     try { $i = [Drawing.Icon]::ExtractAssociatedIcon($p); if ($i) { @('ok', 'var') } else { @('HATA', 'yok') } }
     catch { @('HATA', 'okunamadi') }
+}
+# Surum bilgisi yalnizca src\AssemblyInfo.cs'ten gelir. O dosya takipte
+# degilse temiz klon derlenir ama exe 0.0.0.0 cikar: kullanici Ozellikler >
+# Ayrintilar penceresinde hangi surumu indirdigini goremez.
+T 'exe surum bilgisi tasiyor' {
+    $p = Join-Path $clone 'bin\etodpx.exe'
+    if (-not (Test-Path $p)) { return @('HATA', 'exe yok') }
+    $v = (Get-Item $p).VersionInfo.FileVersion
+    if (-not $v -or $v -eq '0.0.0.0') { @('HATA', "surum = '$v' (AssemblyInfo.cs klona girmemis)") }
+    else { @('ok', $v) }
 }
 T 'ayarlayici temiz kopyada derleniyor' {
     Push-Location $clone
