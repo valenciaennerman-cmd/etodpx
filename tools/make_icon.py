@@ -6,7 +6,7 @@
 # Kullanim:
 #   python make_icon.py                 -> secili stille assets/etodpx.ico
 #   python make_icon.py --style B       -> B stiliyle uret
-#   python make_icon.py --preview 256   -> her stil icin tek tek PNG onizleme
+#   python make_icon.py --preview 256   -> her stil icin PNG onizleme
 #   python make_icon.py --all           -> assets/etodpx-A.ico ... etodpx-F.ico
 #   python make_icon.py --list          -> stilleri listele
 import math
@@ -21,44 +21,45 @@ SS = 4                  # supersampling katsayisi
 
 DEFAULT_STYLE = 'A'
 
-# --- renkler -----------------------------------------------------------------
+# Arayuzun paletiyle ayni (src/ui/Theme.cs). Duz renk: gradyan yok.
 MINT = (0x2B, 0xE0, 0xA8)
-TEAL = (0x10, 0xB4, 0xD8)
-WHITE = (0xFF, 0xFF, 0xFF)
-DARK = (0x12, 0x18, 0x22)
-DARK2 = (0x0A, 0x0E, 0x15)
+DARK = (0x0B, 0x0F, 0x16)
 
 STYLES = {
-    'A': 'gradyan kare + beyaz guc simgesi',
-    'B': 'koyu kare + nane guc simgesi',
-    'C': 'koyu kare + nane halka ve guc simgesi (uygulamadaki dugme)',
-    'D': 'gradyan kare + bolunmus paket cizgileri',
-    'E': 'koyu kare + nane bolunmus paket cizgileri',
-    'F': 'gradyan daire + beyaz guc simgesi',
+    'A': 'kaydirilmis iki cizgi - nane / koyu zemin',
+    'B': 'kaydirilmis iki cizgi - koyu / nane zemin',
+    'C': 'kesilip kaydirilmis kare',
+    'D': 'e harfi - nane / koyu zemin',
+    'E': 'duz guc simgesi - nane / koyu zemin',
+    'F': 'e harfi - koyu / nane zemin',
 }
 
-# --- plaka geometrisi --------------------------------------------------------
 PLATE_HALF = 0.470
 PLATE_R = 0.135
-CIRCLE_R = 0.470
 
-# --- guc simgesi -------------------------------------------------------------
-RING_R = 0.212
-STROKE = 0.078
-GAP_DEG = 33.0
-BAR_TOP = -0.305
-BAR_BOT = -0.060
+# --- kaydirilmis cizgiler (A, B) ---------------------------------------------
+LINE_W = 0.100          # cizgi kalinligi
+LINE_LEN = 0.400        # uc uca uzunluk
+LINE_DY = 0.115         # merkeze gore dikey ofset
+LINE_DX = 0.080         # iki cizgi arasindaki yatay kayma
 
-# --- "bolunmus paket" motifi -------------------------------------------------
-BAR_H = 0.062
-BAR_GAP = 0.105
-BAR_LEN = 0.30
-SPLIT_SHIFT = 0.085
+# --- kesilmis kare (C) -------------------------------------------------------
+CUT_HALF = 0.400
+CUT_R = 0.115
+CUT_SHIFT = 0.072       # yarilarin dikey kaymasi
+CUT_GAP = 0.048         # aradaki bosluk (yarim genislik)
 
-# --- halka (C stili) ---------------------------------------------------------
-OUTER_RING_R = 0.335
-OUTER_RING_W = 0.040
+# --- e harfi (D) -------------------------------------------------------------
+E_R = 0.255
+E_W = 0.090
+E_GAP = (0.0, 62.0)      # sag altta acik kalan yay araligi
 
+# --- guc simgesi (E) ---------------------------------------------------------
+RING_R = 0.235
+STROKE = 0.090
+GAP_DEG = 34.0
+BAR_TOP = -0.330
+BAR_BOT = -0.070
 
 def rrect_sdf(px, py, half, r):
     qx = abs(px) - (half - r)
@@ -78,91 +79,79 @@ def seg_dist(px, py, ax, ay, bx, by):
     return math.sqrt(dx * dx + dy * dy)
 
 
-def power_hit(px, py):
+def capsule(px, py, ax, ay, bx, by, w):
+    return seg_dist(px, py, ax, ay, bx, by) <= w * 0.5
+
+
+def offset_lines(px, py):
+    """Iki cizgi: ustteki sola, alttaki saga kaymis. Bolunmus akis."""
+    half = LINE_LEN * 0.5
+    return (capsule(px, py, -half - LINE_DX, -LINE_DY, half - LINE_DX, -LINE_DY, LINE_W)
+            or capsule(px, py, -half + LINE_DX, LINE_DY, half + LINE_DX, LINE_DY, LINE_W))
+
+
+def letter_e(px, py):
+    """Geometrik kucuk e: sag altta acik halka + yatay orta cizgi."""
+    if abs(math.hypot(px, py) - E_R) <= E_W * 0.5:
+        ang = math.degrees(math.atan2(py, px)) % 360.0
+        if not (E_GAP[0] <= ang <= E_GAP[1]):
+            return True
+    return capsule(px, py, -E_R, 0.0, E_R, 0.0, E_W)
+
+
+def power_glyph(px, py):
     """Standart guc simgesi: ustte bosluklu halka + dikey cizgi."""
-    half = STROKE * 0.5
-    if seg_dist(px, py, 0.0, BAR_TOP, 0.0, BAR_BOT) <= half:
+    if capsule(px, py, 0.0, BAR_TOP, 0.0, BAR_BOT, STROKE):
         return True
 
-    rr = math.sqrt(px * px + py * py)
-    if abs(rr - RING_R) <= half:
-        ang = math.degrees(math.atan2(py, px))
-        delta = abs(ang - (-90.0))
-        if delta > 180.0:
-            delta = 360.0 - delta
+    if abs(math.hypot(px, py) - RING_R) <= STROKE * 0.5:
+        delta = abs((math.degrees(math.atan2(py, px)) + 90.0 + 180.0) % 360.0 - 180.0)
         if delta > GAP_DEG:
             return True
 
-    for sign in (-1.0, 1.0):
+    for sign in (-1.0, 1.0):     # yayin uclarini yuvarlat
         a = math.radians(-90.0 + sign * GAP_DEG)
         cx, cy = RING_R * math.cos(a), RING_R * math.sin(a)
-        if (px - cx) ** 2 + (py - cy) ** 2 <= half * half:
+        if (px - cx) ** 2 + (py - cy) ** 2 <= (STROKE * 0.5) ** 2:
             return True
     return False
 
 
-def split_hit(px, py):
-    """Bolunmus paket: uc yatay cubuk, ortadaki kaydirilmis."""
-    half = BAR_H * 0.5
-    rows = (-BAR_GAP, 0.0, BAR_GAP)
-    for i, cy in enumerate(rows):
-        shift = SPLIT_SHIFT if i == 1 else 0.0
-        x0 = -BAR_LEN * 0.5 + shift
-        x1 = BAR_LEN * 0.5 + shift
-        if seg_dist(px, py, x0, cy, x1, cy) <= half:
-            return True
+def cut_plate(px, py):
+    """Dikey kesilip iki yarisi ters yonde kaydirilmis yuvarlak kare."""
+    if px < 0.0:
+        d = rrect_sdf(px + CUT_GAP, py - CUT_SHIFT, CUT_HALF, CUT_R)
+        return max(d, px + CUT_GAP)
+    d = rrect_sdf(px - CUT_GAP, py + CUT_SHIFT, CUT_HALF, CUT_R)
+    return max(d, CUT_GAP - px)
+
+
+def plain_plate(px, py):
+    return rrect_sdf(px, py, PLATE_HALF, PLATE_R)
+
+
+def no_glyph(px, py):
     return False
 
 
-def ring_hit(px, py):
-    rr = math.sqrt(px * px + py * py)
-    return abs(rr - OUTER_RING_R) <= OUTER_RING_W * 0.5
-
-
-def lerp_color(a, b, t):
-    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
-    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
-
-
-def diagonal_t(px, py, half):
-    return (px + py + 2 * half) / (4 * half)
-
-
-def make_style(style):
-    """(plate_sdf, plate_color, glyph_hit, glyph_color) dondurur."""
-    style = style.upper()
-
-    if style == 'F':
-        plate = lambda px, py: math.sqrt(px * px + py * py) - CIRCLE_R
-        half = CIRCLE_R
-    else:
-        plate = lambda px, py: rrect_sdf(px, py, PLATE_HALF, PLATE_R)
-        half = PLATE_HALF
-
-    gradient = lambda px, py: lerp_color(MINT, TEAL, diagonal_t(px, py, half))
-    dark_plate = lambda px, py: lerp_color(DARK, DARK2, diagonal_t(px, py, half))
-
-    if style == 'A':
-        return plate, gradient, power_hit, lambda px, py: WHITE
-    if style == 'B':
-        return plate, dark_plate, power_hit, lambda px, py: MINT
-    if style == 'C':
-        both = lambda px, py: power_hit(px, py) or ring_hit(px, py)
-        return plate, dark_plate, both, lambda px, py: MINT
-    if style == 'D':
-        return plate, gradient, split_hit, lambda px, py: WHITE
-    if style == 'E':
-        return plate, dark_plate, split_hit, lambda px, py: MINT
-    if style == 'F':
-        return plate, gradient, power_hit, lambda px, py: WHITE
-
-    raise SystemExit('bilinmeyen stil: %s  (secenekler: %s)'
-                     % (style, ', '.join(sorted(STYLES))))
+# stil -> (plaka sdf, plaka rengi, glif, glif rengi)
+LAYOUT = {
+    'A': (plain_plate, DARK, offset_lines, MINT),
+    'B': (plain_plate, MINT, offset_lines, DARK),
+    'C': (cut_plate,   MINT, no_glyph,     DARK),
+    'D': (plain_plate, DARK, letter_e,     MINT),
+    'E': (plain_plate, DARK, power_glyph,  MINT),
+    'F': (plain_plate, MINT, letter_e,     DARK),
+}
 
 
 def render(size, style):
     """RGBA bayt dizisi (ust satirdan alta)."""
-    plate_sdf, plate_col, glyph, glyph_col = make_style(style)
+    style = style.upper()
+    if style not in LAYOUT:
+        raise SystemExit('bilinmeyen stil: %s  (secenekler: %s)'
+                         % (style, ', '.join(sorted(STYLES))))
+    plate_sdf, plate_col, glyph, glyph_col = LAYOUT[style]
 
     n = size * SS
     inv = 1.0 / n
@@ -176,7 +165,7 @@ def render(size, style):
             px = (sx * inv) - 0.5 + center
             if plate_sdf(px, py) > 0.0:
                 continue
-            c = glyph_col(px, py) if glyph(px, py) else plate_col(px, py)
+            c = glyph_col if glyph(px, py) else plate_col
             cell = acc[row + (sx // SS)]
             cell[0] += c[0]
             cell[1] += c[1]
@@ -281,7 +270,7 @@ def main():
 
     if make_all:
         os.makedirs(assets, exist_ok=True)
-        print('butun stiller uretiliyor (Explorer icinde "Buyuk simgeler" ile bak):')
+        print('butun stiller uretiliyor (Explorer icinde Buyuk simgeler ile bak):')
         for k in sorted(STYLES):
             dest = os.path.abspath(os.path.join(assets, 'etodpx-%s.ico' % k))
             print('  %s : %s' % (k, STYLES[k]))
