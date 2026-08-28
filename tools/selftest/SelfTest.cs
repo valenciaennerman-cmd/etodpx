@@ -1,6 +1,5 @@
-﻿// etodpx - oz test
-// Motorun UI olmadan dogrulanabilir parcalarini sinar. Yonetici gerektirmez;
-// yalnizca WinDivert.dll yaninda olmali (filtre derleyicisi icin).
+﻿// Oz test: motorun arayuz olmadan dogrulanabilir parcalari.
+// Yonetici gerekmez, yalnizca WinDivert.dll yaninda olmali (filtre derleyicisi).
 //
 // Derleme: tools\selftest\build-selftest.cmd
 using System;
@@ -39,11 +38,14 @@ namespace Etodpx.Test
 
             TestInterop();
             TestConfig();
+            TestConfigCopy();
+            TestDnsRestore();
             TestTunerDiagnostics();
             TestFilters();
             TestFakeClientHello();
             TestSniParser();
             TestMidSld();
+            TestSplitPosModes();
             TestHttpHost();
             TestPacketParse();
             TestQuicFake();
@@ -57,6 +59,102 @@ namespace Etodpx.Test
             Console.WriteLine("gecen: " + _pass + "   kalan: " + _fail);
             Console.WriteLine();
             return _fail == 0 ? 0 : 1;
+        }
+
+        // --- ayar kopyalama
+        // Ayarlayici yeni degerleri diske yazip CopyFrom ile calisan uygulamaya
+        // tasiyor. O elle yazilmis listeye eklenmeyen her yeni alan sessizce eski
+        // degerinde kalir: dosyada dogru ayar gorunur, motor baskasini kullanir.
+        private static void TestConfigCopy()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- ayar kopyalama");
+
+            var src = new Config();
+            var dst = new Config();
+            var missed = new System.Collections.Generic.List<string>();
+
+            var fields = typeof(Config).GetFields(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+            // Kaynagi her alanda varsayilandan farkli bir degere cek.
+            foreach (var f in fields)
+            {
+                if (f.FieldType == typeof(bool)) f.SetValue(src, !(bool)f.GetValue(dst));
+                else if (f.FieldType == typeof(int)) f.SetValue(src, (int)f.GetValue(dst) + 7);
+                else if (f.FieldType == typeof(short)) f.SetValue(src, (short)((short)f.GetValue(dst) + 7));
+                else if (f.FieldType == typeof(string)) f.SetValue(src, "kopya-testi");
+            }
+            src.Warnings.Add("uyari");
+
+            dst.CopyFrom(src);
+
+            foreach (var f in fields)
+            {
+                object a = f.GetValue(src), b = f.GetValue(dst);
+                if (f.FieldType == typeof(System.Collections.Generic.List<string>))
+                {
+                    var la = (System.Collections.Generic.List<string>)a;
+                    var lb = (System.Collections.Generic.List<string>)b;
+                    if (la.Count != lb.Count) missed.Add(f.Name);
+                    continue;
+                }
+                if (!Equals(a, b)) missed.Add(f.Name);
+            }
+
+            Check(fields.Length > 20, "Config alanlari yansima ile bulundu",
+                  "bulunan " + fields.Length);
+            Check(missed.Count == 0, "CopyFrom butun ayar alanlarini tasiyor",
+                  "tasinmayan: " + string.Join(", ", missed.ToArray()));
+        }
+
+        // --- DNS geri alma
+        // Geri alma yalnizca elle yazilmis sunuculari geri koymali. Tek ailesi elle
+        // ayarli bir makinede eski kod digerini bizim Cloudflare adresimizde
+        // birakiyordu - "geri alinabilir" sozu boyle bozuluyor.
+        private static void TestDnsRestore()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- DNS geri alma");
+
+            Check(NetworkRepair.SplitServers("1.1.1.1,1.0.0.1").Length == 2,
+                  "kayit defteri metni virgulden ayriliyor");
+            Check(NetworkRepair.SplitServers("1.1.1.1 1.0.0.1").Length == 2,
+                  "kayit defteri metni bosluktan da ayriliyor");
+            Check(NetworkRepair.SplitServers("").Length == 0,
+                  "bos NameServer = DHCP");
+
+            var bothStatic = new DnsBackup
+            {
+                Static4 = new[] { "8.8.8.8" },
+                Static6 = new[] { "2001:4860:4860::8888" }
+            };
+            Check(NetworkRepair.RestoreServers(bothStatic).Length == 2,
+                  "iki aile de elle ayarliysa ikisi de geri konuyor");
+
+            var v4Only = new DnsBackup { Static4 = new[] { "8.8.8.8" }, Static6 = new string[0] };
+            string[] r = NetworkRepair.RestoreServers(v4Only);
+            Check(r.Length == 1 && r[0] == "8.8.8.8",
+                  "yalniz IPv4 elle ayarliysa IPv6 DHCP'ye birakiliyor",
+                  "gelen " + string.Join(",", r));
+
+            var v6Only = new DnsBackup { Static4 = new string[0], Static6 = new[] { "2001:db8::1" } };
+            r = NetworkRepair.RestoreServers(v6Only);
+            Check(r.Length == 1 && r[0] == "2001:db8::1",
+                  "yalniz IPv6 elle ayarliysa IPv4 DHCP'ye birakiliyor",
+                  "gelen " + string.Join(",", r));
+
+            var allDhcp = new DnsBackup { Static4 = new string[0], Static6 = new string[0] };
+            Check(NetworkRepair.RestoreServers(allDhcp).Length == 0,
+                  "iki aile de DHCP ise hicbir sey elle yazilmiyor");
+
+            // Eski surumden kalan yedek dosyalarinda aile ayrimi yok.
+            var legacyStatic = new DnsBackup { WasDhcp = false, Servers = new[] { "9.9.9.9" } };
+            Check(NetworkRepair.RestoreServers(legacyStatic).Length == 1,
+                  "eski bicimli yedek hala geri yuklenebiliyor");
+            var legacyDhcp = new DnsBackup { WasDhcp = true, Servers = new string[0] };
+            Check(NetworkRepair.RestoreServers(legacyDhcp).Length == 0,
+                  "eski bicimli DHCP yedegi DHCP'ye donuyor");
         }
 
         private static void TestTunerDiagnostics()
@@ -77,8 +175,8 @@ namespace Etodpx.Test
             Check(!Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("1.1.1.1")),
                 "normal DNS adresi zehirli sayilmiyor");
 
-            // Tarama erken cikisi. Yanlis tarafa kayan bir esik CALISAN bir
-            // stratejiyi eler ve kullanici bosuna "asilamiyor" cevabi alir.
+            // Tarama erken cikisi. Yanlis tarafa kayan bir esik calisan bir
+            // stratejiyi eler, kullanici da bosuna "asilamiyor" cevabi alir.
             Check(!Tuner.CannotWin(0, 2, 1),
                 "kalan denemeler en iyiyi gecebiliyorsa tarama surduruluyor");
             Check(Tuner.CannotWin(0, 1, 1),
@@ -91,7 +189,7 @@ namespace Etodpx.Test
                 "-1 esigi verildiginde hic vazgecilmiyor (temel olcum ve dogrulama)");
         }
 
-        // -------------------------------------------------------------- interop
+        // --- interop
         private static void TestInterop()
         {
             Console.WriteLine();
@@ -110,7 +208,7 @@ namespace Etodpx.Test
             Check(!a.Outbound && a.TcpChecksum, "bitler birbirinden bagimsiz");
         }
 
-        // ---------------------------------------------------- desync korumalari
+        // --- desync korumalari
         private static void TestDesyncGuards()
         {
             Console.WriteLine();
@@ -118,8 +216,7 @@ namespace Etodpx.Test
 
             var cfg = new Config();
             var st = new Stats();
-            // Tutamak IntPtr.Zero: asagidaki durumlarin hepsi gonderim yapmadan
-            // false donmeli, yani surucuye hic dokunulmaz.
+            // Tutamak IntPtr.Zero: hepsi gonderim yapmadan false donmeli.
             using (var w = new DesyncWorker(cfg, st, IntPtr.Zero, 0))
             {
                 byte[] hello = Fakes.BuildTlsClientHello("discord.com");
@@ -142,14 +239,10 @@ namespace Etodpx.Test
             }
         }
 
-        // --------------------------------------------- Host: yeniden yazma guvenligi
-        /// <summary>
-        /// http_host_case, YAKALANAN paketin tamponunu yerinde degistirir.
-        /// Paketi kendimiz gonderemezsek WorkerLoop onu checksum'i yeniden
-        /// hesaplamadan enjekte eder; degismis yuk + eski checksum = sunucunun
-        /// atacagi bozuk paket. Yani geri dusme yolunda tampon ESKI haline
-        /// donmus olmali.
-        /// </summary>
+        // --- Host: yeniden yazma guvenligi
+        // http_host_case yakalanan paketin tamponunu yerinde degistiriyor. Paketi
+        // kendimiz gonderemezsek WorkerLoop onu eski checksum ile enjekte eder ve
+        // sunucu atar; geri dusme yolunda tampon eski haline donmus olmali.
         private static void TestHostCaseSafety()
         {
             Console.WriteLine();
@@ -220,12 +313,9 @@ namespace Etodpx.Test
             return pkt;
         }
 
-        // -------------------------------------------- TCP yanlis eslesmeleri
-        /// <summary>
-        /// Akis ortasindaki veri ClientHello ya da HTTP istegi sanilmamali.
-        /// Sanilirsa araya gecerli checksum'li sahte paket girer ve TTL fazla
-        /// yuksekse sunucuya ulasip veriyi bozar.
-        /// </summary>
+        // --- TCP yanlis eslesmeleri
+        // Akis ortasindaki veri ClientHello ya da HTTP istegi sanilirsa araya
+        // gecerli checksum'li sahte paket girer; TTL yuksekse sunucuya ulasir.
         private static void TestTcpFalsePositives()
         {
             Console.WriteLine();
@@ -244,8 +334,8 @@ namespace Etodpx.Test
                       "gonderim hatasinda ClientHello orijinale geri dusuyor");
                 long baseErr = st.SendErrors;
 
-                // 2) Eski (gevsek) kontrolu gecen ama YAPISI bozuk paketler.
-                //    Sifreli akis ortasindaki rastgele veri boyle gorunebilir.
+                // 2) Gevsek kontrolu gecen ama yapisi bozuk paketler; sifreli akis
+                //    ortasindaki rastgele veri boyle gorunebiliyor.
                 var rnd = new Random(31337);
                 int caught = 0, tries = 20000;
                 for (int i = 0; i < tries; i++)
@@ -294,14 +384,10 @@ namespace Etodpx.Test
             }
         }
 
-        // ------------------------------------------- QUIC yanlis eslesmeleri
-        /// <summary>
-        /// UDP/443 uzerinden QUIC OLMAYAN trafik gecebilir - ornegin Steam
-        /// Datagram Relay (CS2 oyun trafigi) kisitli aglarda 443'e duser.
-        /// Boyle bir pakete dokunmak araya sahte paket sokar ve ping sicratir.
-        /// Burada QUIC olmayan ama ilk bayti QUIC gibi gorunen paketlerin
-        /// es gecildigi dogrulanir.
-        /// </summary>
+        // --- QUIC yanlis eslesmeleri
+        // UDP/443'ten QUIC disi trafik gecebiliyor: Steam Datagram Relay (CS2)
+        // kisitli aglarda 443'e dusuyor. Boyle bir pakete dokunmak ping sicratir.
+        // Ilk bayti QUIC gibi gorunen paketlerin es gecildigini dogruluyoruz.
         private static void TestQuicFalsePositives()
         {
             Console.WriteLine();
@@ -323,7 +409,7 @@ namespace Etodpx.Test
 
                 long errAfterReal = st.SendErrors;
 
-                // Ayni ilk bayt, ama QUIC surumu degil -> DOKUNULMAMALI
+                // Ayni ilk bayt, QUIC surumu degil -> dokunulmamali
                 var rnd = new Random(4242);
                 int skipped = 0, total = 0;
                 for (int b0 = 0xc0; b0 <= 0xcf; b0++)
@@ -382,7 +468,7 @@ namespace Etodpx.Test
             return pkt;
         }
 
-        // ----------------------------------------------------------------- IPv6
+        // --- IPv6
         private static void TestIPv6()
         {
             Console.WriteLine();
@@ -452,7 +538,7 @@ namespace Etodpx.Test
             return pkt;
         }
 
-        // ------------------------------------------------------------- filtreler
+        // --- filtreler
         private static void TestFilters()
         {
             Console.WriteLine();
@@ -470,7 +556,7 @@ namespace Etodpx.Test
             for (int i = 0; i < quic.Length; i++)
                 Check(CompileWithMessage(quic[i], i == 0), "QUIC aday " + (i + 1) + " derleniyor");
 
-            // En dar filtreler kullanilabilmeli - dusme olursa basarim duser.
+            // En dar filtreler kullanilabilmeli; genise dusmek basarimi dusurur.
             Check(DpiEngine.FilterCompiles(tcp[0], DivertLayer.Network),
                   "TCP en dar filtre (payload duyarli) kabul edildi");
             Check(DpiEngine.FilterCompiles(quic[0], DivertLayer.Network),
@@ -511,7 +597,7 @@ namespace Etodpx.Test
             return s.Length <= 150 ? s : s.Substring(0, 147) + "...";
         }
 
-        // ------------------------------------------------- sahte ClientHello
+        // --- sahte ClientHello
         private static void TestFakeClientHello()
         {
             Console.WriteLine();
@@ -544,7 +630,7 @@ namespace Etodpx.Test
             }
         }
 
-        // -------------------------------------------------------- SNI ayristirici
+        // --- SNI ayristirici
         private static void TestSniParser()
         {
             Console.WriteLine();
@@ -581,7 +667,7 @@ namespace Etodpx.Test
             Check(true, "rastgele veride cokme yok (400 deneme)");
         }
 
-        // ------------------------------------------------------------ bolme noktasi
+        // --- bolme noktasi
         private static void TestMidSld()
         {
             Console.WriteLine();
@@ -591,6 +677,53 @@ namespace Etodpx.Test
             CheckSplit("youtube.com", 3);       // "you" -> 3
             CheckSplit("a.b.example.com", 7);   // "exam" ortasi
             CheckSplit("localhost", 4);         // nokta yok -> ortadan
+        }
+
+        // --- split_pos secimi
+        // Uc kip de gercekten farkli konum uretmeli. Sabit sayi, alan adi bulunsa
+        // da gecerli olmali; yoksa "pos 2" sessizce midsld'e donusuyor ve
+        // ayarlayicinin pos stratejileri onun kopyasi oluyor.
+        private static void TestSplitPosModes()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- split_pos kipleri");
+
+            byte[] ch = Fakes.BuildTlsClientHello("www.youtube.com");
+            fixed (byte* p = ch)
+            {
+                HostLocation h = Hostname.FindSni(p, ch.Length);
+                bool found;
+
+                int fixedAt = DesyncWorker.ChooseSplitPos(p, ch.Length, true, false, 2, out found);
+                Check(fixedAt == 2 && !found,
+                      "split_pos = 2 alan adi bulunsa da sabit konumu kullaniyor",
+                      "gelen " + fixedAt);
+
+                int hostAt = DesyncWorker.ChooseSplitPos(p, ch.Length, true, true, 0, out found);
+                Check(hostAt == h.Offset + 1 && found,
+                      "split_pos = host alan adinin ilk harfinden sonra boluyor",
+                      "gelen " + hostAt + ", beklenen " + (h.Offset + 1));
+
+                int midAt = DesyncWorker.ChooseSplitPos(p, ch.Length, true, false, 0, out found);
+                Check(midAt == Hostname.MidSld(p, h.Offset, h.Length) && found && midAt != hostAt,
+                      "split_pos = midsld ana etiketin ortasindan boluyor",
+                      "gelen " + midAt);
+
+                int oversize = DesyncWorker.ChooseSplitPos(p, ch.Length, true, false, ch.Length + 1, out found);
+                Check(oversize == -1, "yuk disina tasan sabit konum bolmeyi iptal ediyor",
+                      "gelen " + oversize);
+            }
+
+            // Alan adi yoksa varsayilan konumlar: TLS 3, HTTP 2.
+            byte[] noHost = Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nAccept: */*\r\n\r\n");
+            fixed (byte* p = noHost)
+            {
+                bool found;
+                Check(DesyncWorker.ChooseSplitPos(p, noHost.Length, false, false, 0, out found) == 2 && !found,
+                      "Host basligi yokken HTTP varsayilani 2");
+                Check(DesyncWorker.ChooseSplitPos(p, noHost.Length, true, false, 0, out found) == 3 && !found,
+                      "SNI yokken TLS varsayilani 3");
+            }
         }
 
         private static void CheckSplit(string host, int expected)
@@ -607,7 +740,7 @@ namespace Etodpx.Test
             }
         }
 
-        // -------------------------------------------------------------- HTTP Host
+        // --- HTTP Host
         private static void TestHttpHost()
         {
             Console.WriteLine();
@@ -636,7 +769,7 @@ namespace Etodpx.Test
             }
         }
 
-        // ------------------------------------------------------------ ayar dosyasi
+        // --- ayar dosyasi
         private static void TestConfig()
         {
             Console.WriteLine();
@@ -676,7 +809,7 @@ namespace Etodpx.Test
             }
         }
 
-        // ---------------------------------------------------------- paket ayristirma
+        // --- paket ayristirma
         private static void TestPacketParse()
         {
             Console.WriteLine();
@@ -751,7 +884,7 @@ namespace Etodpx.Test
             return pkt;
         }
 
-        // ------------------------------------------------------------- QUIC sahte
+        // --- QUIC sahte
         private static void TestQuicFake()
         {
             Console.WriteLine();

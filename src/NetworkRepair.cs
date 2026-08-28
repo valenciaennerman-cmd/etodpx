@@ -1,12 +1,13 @@
-﻿// etodpx - aktif ag baglantisi icin geri alinabilir DNS onarimi.
+﻿// Aktif baglanti icin geri alinabilir DNS onarimi.
 //
-// Bu kod yalnizca kullanici "Otomatik duzelt" dedikten ve ayarlayici sistem
-// DNS'inin bozuk oldugunu olctukten sonra calisir. Degisiklikten ONCE mevcut
-// sunucular diske yazilir. Yeni ayar dogrulanamazsa arayuz bu yedegi geri yukler.
+// Yalnizca kullanici "Otomatik duzelt" dedikten ve ayarlayici sistem DNS'inin
+// bozuk oldugunu olctukten sonra calisir. Mevcut sunucular degisiklikten once
+// diske yazilir; yeni ayar dogrulanamazsa arayuz yedegi geri yukler.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text;
 
 namespace Etodpx
@@ -18,11 +19,25 @@ namespace Etodpx
         public string[] Servers;
         public bool WasDhcp;
         public string FilePath;
+        // Kayit defterinden okunan, aile bazinda elle yazilmis sunucular.
+        // null = eski bicimli yedek; bos dizi = o aile DHCP'deydi.
+        public string[] Static4;
+        public string[] Static6;
+        // Link-local disi IPv6 adresi var mi. Yoksa IPv6 cozumleyicisi yazmak
+        // her sorguya olu bir deneme eklemekten baska ise yaramaz.
+        public bool HasGlobalV6;
     }
 
     internal static class NetworkRepair
     {
         private const int CommandTimeoutMs = 20000;
+
+        // Program.AppDir yerine dogrudan - boylece dosya WPF'siz derleniyor ve
+        // oz test onu iceri alabiliyor.
+        private static string AppDir()
+        {
+            return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        }
 
         public static DnsBackup CaptureActiveDns(out string error)
         {
@@ -44,16 +59,27 @@ namespace Etodpx
                 "$adapter=Get-NetAdapter -InterfaceIndex $best.Index -ErrorAction Stop;" +
                 "$dns=@(Get-DnsClientServerAddress -InterfaceIndex $best.Index|" +
                 " ForEach-Object {$_.ServerAddresses}|Where-Object {$_});" +
-                "$g='{'+$adapter.InterfaceGuid.ToString()+'}';" +
+                // InterfaceGuid zaten '{...}' bicimli. Bir kez daha sarmalayinca yol
+                // '{{...}}' oluyordu: okuma hep bos donuyor, elle DNS yazilmis makine
+                // DHCP sanilip geri almada DHCP'ye donduruluyordu.
+                "$g=[string]$adapter.InterfaceGuid;" +
+                "if($g -notmatch '^\\{'){$g='{'+$g+'}'};" +
                 "$k4='HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\'+$g;" +
                 "$k6='HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip6\\Parameters\\Interfaces\\'+$g;" +
                 "$n4=[string](Get-ItemProperty -Path $k4 -Name NameServer -ErrorAction SilentlyContinue).NameServer;" +
                 "$n6=[string](Get-ItemProperty -Path $k6 -Name NameServer -ErrorAction SilentlyContinue).NameServer;" +
                 "$dhcp=if([string]::IsNullOrWhiteSpace($n4)-and[string]::IsNullOrWhiteSpace($n6)){'1'}else{'0'};" +
+                // Global IPv6 yoksa IPv6 cozumleyicisi yazmiyoruz.
+                "$v6=@(Get-NetIPAddress -InterfaceIndex $best.Index -AddressFamily IPv6" +
+                " -ErrorAction SilentlyContinue|Where-Object {$_.PrefixOrigin -ne 'WellKnown' -and" +
+                " -not $_.IPAddress.StartsWith('fe80') -and $_.IPAddress -ne '::1'});" +
                 "$enc=[Text.Encoding]::UTF8;" +
                 "'ETODPX_INDEX='+$best.Index;" +
                 "'ETODPX_ALIAS_B64='+[Convert]::ToBase64String($enc.GetBytes($best.Alias));" +
                 "'ETODPX_WAS_DHCP='+$dhcp;" +
+                "'ETODPX_HAS_V6='+$(if($v6.Count -gt 0){'1'}else{'0'});" +
+                "'ETODPX_STATIC4_B64='+[Convert]::ToBase64String($enc.GetBytes($n4));" +
+                "'ETODPX_STATIC6_B64='+[Convert]::ToBase64String($enc.GetBytes($n6));" +
                 "'ETODPX_SERVERS_B64='+[Convert]::ToBase64String($enc.GetBytes(($dns -join \"`n\")))";
 
             ProcessResult run = RunPowerShell(script);
@@ -78,7 +104,7 @@ namespace Etodpx
                     ? new string[0]
                     : serverText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
-                string path = Path.Combine(Program.AppDir(), "etodpx-dns-backup-" + index + ".conf");
+                string path = Path.Combine(AppDir(), "etodpx-dns-backup-" + index + ".conf");
                 DnsBackup existing = LoadBackup(path);
                 if (existing != null) return existing;
 
@@ -88,6 +114,9 @@ namespace Etodpx
                     InterfaceAlias = alias,
                     Servers = servers,
                     WasDhcp = Marker(run.Output, "ETODPX_WAS_DHCP") == "1",
+                    HasGlobalV6 = Marker(run.Output, "ETODPX_HAS_V6") == "1",
+                    Static4 = SplitServers(Decode(Marker(run.Output, "ETODPX_STATIC4_B64"))),
+                    Static6 = SplitServers(Decode(Marker(run.Output, "ETODPX_STATIC6_B64"))),
                     FilePath = path
                 };
                 SaveBackup(backup);
@@ -109,6 +138,16 @@ namespace Etodpx
                 return false;
             }
 
+            // Yalnizca IPv4'u duzeltmek yetmiyor: cift yiginli bir hatta Windows
+            // once IPv6 cozumleyicisini soruyor, yani ISS'nin zehirli sunucusu
+            // cevap vermeye devam ediyor. Global IPv6 varsa iki aileyi de yaziyoruz.
+            string servers = backup.HasGlobalV6
+                ? "'1.1.1.1','1.0.0.1','2606:4700:4700::1111','2606:4700:4700::1001'"
+                : "'1.1.1.1','1.0.0.1'";
+            string dohHosts = backup.HasGlobalV6
+                ? "'1.1.1.1','1.0.0.1','2606:4700:4700::1111','2606:4700:4700::1001'"
+                : "'1.1.1.1','1.0.0.1'";
+
             string script =
                 "$ErrorActionPreference='Stop';" +
                 "$n=Join-Path $env:SystemRoot 'System32\\netsh.exe';" +
@@ -123,9 +162,9 @@ namespace Etodpx
                 "  if($LASTEXITCODE -ne 0){throw ('Sifreli DNS kaydedilemedi: '+$s)}" +
                 " }" +
                 "};" +
-                "Set-Doh '1.1.1.1';Set-Doh '1.0.0.1';" +
+                "foreach($s in @(" + dohHosts + ")){Set-Doh $s};" +
                 "Set-DnsClientServerAddress -InterfaceIndex " + backup.InterfaceIndex +
-                " -ServerAddresses @('1.1.1.1','1.0.0.1');" +
+                " -ServerAddresses @(" + servers + ");" +
                 "Clear-DnsClientCache;" +
                 "'ETODPX_DNS_CHANGED=1'";
 
@@ -144,18 +183,19 @@ namespace Etodpx
                 return false;
             }
 
-            string set;
-            if (backup.WasDhcp || backup.Servers == null || backup.Servers.Length == 0)
-            {
-                set = "Set-DnsClientServerAddress -InterfaceIndex " + backup.InterfaceIndex +
-                      " -ResetServerAddresses;";
-            }
-            else
+            // Once iki aileyi de DHCP'ye dondur, sonra elle yazilmis olanlari geri
+            // koy. Tek adimda -ServerAddresses vermek, yalnizca bir ailesi elle
+            // ayarli makinede digerini bizim Cloudflare adresimizde birakiyordu.
+            string set = "Set-DnsClientServerAddress -InterfaceIndex " + backup.InterfaceIndex +
+                         " -ResetServerAddresses;";
+
+            string[] servers = RestoreServers(backup);
+            if (servers.Length > 0)
             {
                 var values = new List<string>();
-                foreach (string server in backup.Servers) values.Add(PsQuote(server));
-                set = "Set-DnsClientServerAddress -InterfaceIndex " + backup.InterfaceIndex +
-                      " -ServerAddresses @(" + string.Join(",", values.ToArray()) + ");";
+                foreach (string server in servers) values.Add(PsQuote(server));
+                set += "Set-DnsClientServerAddress -InterfaceIndex " + backup.InterfaceIndex +
+                       " -ServerAddresses @(" + string.Join(",", values.ToArray()) + ");";
             }
 
             ProcessResult run = RunPowerShell(
@@ -166,6 +206,32 @@ namespace Etodpx
             return false;
         }
 
+        // Geri yuklenecek sunucular; elle ayarli aile yoksa bos doner (DHCP kalir).
+        internal static string[] RestoreServers(DnsBackup backup)
+        {
+            if (backup == null) return new string[0];
+
+            if (backup.Static4 != null || backup.Static6 != null)
+            {
+                var l = new List<string>();
+                if (backup.Static4 != null) l.AddRange(backup.Static4);
+                if (backup.Static6 != null) l.AddRange(backup.Static6);
+                return l.ToArray();
+            }
+
+            // Eski bicimli yedek: aile ayrimi yok, yalnizca "hepsi DHCP miydi" var.
+            if (backup.WasDhcp || backup.Servers == null) return new string[0];
+            return backup.Servers;
+        }
+
+        // NameServer metni virgul ya da bosluk ayrimli geliyor.
+        internal static string[] SplitServers(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return new string[0];
+            return value.Split(new[] { ',', ' ', '\t', '\r', '\n' },
+                               StringSplitOptions.RemoveEmptyEntries);
+        }
+
         private static void SaveBackup(DnsBackup backup)
         {
             var lines = new[]
@@ -174,6 +240,9 @@ namespace Etodpx
                 "interface_index=" + backup.InterfaceIndex,
                 "interface_alias_b64=" + Encode(backup.InterfaceAlias ?? string.Empty),
                 "was_dhcp=" + (backup.WasDhcp ? "true" : "false"),
+                "has_global_v6=" + (backup.HasGlobalV6 ? "true" : "false"),
+                "static4_b64=" + Encode(string.Join("\n", backup.Static4 ?? new string[0])),
+                "static6_b64=" + Encode(string.Join("\n", backup.Static6 ?? new string[0])),
                 "servers_b64=" + Encode(string.Join("\n", backup.Servers ?? new string[0]))
             };
             File.WriteAllLines(backup.FilePath, lines, new UTF8Encoding(false));
@@ -186,7 +255,9 @@ namespace Etodpx
             {
                 int index = 0;
                 string alias = string.Empty, servers = string.Empty;
-                bool wasDhcp = false;
+                bool wasDhcp = false, hasV6 = false;
+                // null kalirlarsa dosya eski bicimlidir; RestoreServers buna gore davranir.
+                string[] static4 = null, static6 = null;
                 foreach (string raw in File.ReadAllLines(path))
                 {
                     int eq = raw.IndexOf('=');
@@ -196,6 +267,9 @@ namespace Etodpx
                     if (key == "interface_index") int.TryParse(value, out index);
                     else if (key == "interface_alias_b64") alias = Decode(value);
                     else if (key == "was_dhcp") bool.TryParse(value, out wasDhcp);
+                    else if (key == "has_global_v6") bool.TryParse(value, out hasV6);
+                    else if (key == "static4_b64") static4 = SplitServers(Decode(value));
+                    else if (key == "static6_b64") static6 = SplitServers(Decode(value));
                     else if (key == "servers_b64") servers = Decode(value);
                 }
                 if (index <= 0) return null;
@@ -204,6 +278,9 @@ namespace Etodpx
                     InterfaceIndex = index,
                     InterfaceAlias = alias,
                     WasDhcp = wasDhcp,
+                    HasGlobalV6 = hasV6,
+                    Static4 = static4,
+                    Static6 = static6,
                     Servers = servers.Length == 0
                         ? new string[0]
                         : servers.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries),
