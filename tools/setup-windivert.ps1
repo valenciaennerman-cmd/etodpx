@@ -2,7 +2,10 @@
 #
 # WinDivert, GoodbyeDPI ve zapret dahil butun bu tur araclarin kullandigi
 # acik kaynakli paket yakalama surucusudur (LGPLv3 / GPLv2).
-# Surucu Microsoft tarafindan imzalidir, Secure Boot ile calisir.
+# Surucunun Authenticode imzasi gecerlidir, ancak imzalayan Microsoft DEGIL:
+# WinDivert 2.2.2 ucuncu taraf bir sertifikayla imzalanmistir (Chengdu Misi
+# Ting Technology). Asagidaki denetim imzanin GECERLILIGINE bakar, kime ait
+# olduguna degil.
 
 $ErrorActionPreference = 'Stop'
 

@@ -1,9 +1,9 @@
 @echo off
 rem etodpx - butun testler. GitHub'a push etmeden once bunu calistir.
 rem
-rem   1) Oz test            (91 kontrol, yonetici gerekmez)
-rem   2) Yayin denetimi     (22 kontrol, sifirdan klon derlemesi)
-rem   3) Ag test paketi     (67 kontrol, etodpx ACIK olmali)
+rem   1) Oz test            (113 kontrol, yonetici gerekmez)
+rem   2) Yayin denetimi     (25 kontrol, sifirdan klon derlemesi)
+rem   3) Ag test paketi     (67 kontrol, etodpx acik olmali)
 setlocal
 cd /d "%~dp0..\.."
 

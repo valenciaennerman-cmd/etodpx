@@ -1,4 +1,4 @@
-# etodpx - paylasilabilir paket hazirlar
+﻿# etodpx - paylasilabilir paket hazirlar
 #
 # Klasoru oldugu gibi RAR'lamak iki hata dogurur:
 #   1) bin\etodpx.conf SENIN hattina ayarlidir. Karsi tarafta yanlis TTL ile
@@ -12,7 +12,7 @@
 # Yonetici gerekmez.
 #   powershell -ExecutionPolicy Bypass -File tools\make-release.ps1
 
-param([string]$Version = '1.0')
+param([string]$Version = '2.0')
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot

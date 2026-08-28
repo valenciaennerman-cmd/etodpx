@@ -36,7 +36,7 @@ derleniyor. Karışmasın diye:
 | `build.cmd` | Yalnızca derler, hiçbir şey açmaz | Kaynak kodu değiştirdiysen |
 | `tools\setup-windivert.cmd` | Sürücüyü indirir | `etodpx.cmd` zaten çağırıyor; elle kurmak istersen |
 | `bin\etodpx-tune.exe` | Arayüzün kullandığı otomatik ölçüm aracı | Normal kullanıcı bunu elle açmaz |
-| `tools\test\test-all.cmd` | 180 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
+| `tools\test\test-all.cmd` | 205 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
 
 Yani sıradan bir kullanıcı için tek adım var:
 
@@ -366,13 +366,13 @@ python tools\make_icon.py --style C
 Üç ayrı test paketi var. Hepsini birden çalıştırmak için:
 
 ```bat
-tools	est	est-all.cmd
+tools\test\test-all.cmd
 ```
 
 | Paket | Kontrol | Yönetici | Ne yapar |
 |---|---|---|---|
-| Öz test | 79 | hayır | Motor mantığı, ayar doğrulama, ayrıştırıcılar, filtre söz dizimi |
-| Yayın denetimi | 22 | hayır | Temiz klonu sıfırdan derler, sızıntı arar |
+| Öz test | 113 | hayır | Motor mantığı, ayar doğrulama, ayrıştırıcılar, filtre söz dizimi |
+| Yayın denetimi | 25 | hayır | Temiz klonu sıfırdan derler, sızıntı arar |
 | Ağ paketi | 67 | etodpx açık olmalı | Gerçek bağlantılar, ping, hız, yan hasar |
 
 **Yayın denetimi** GitHub'a atmadan önce en önemlisi: git'in gerçekten takip
@@ -382,7 +382,7 @@ yol, eksik simge. Ayrıca günlük dosyası, derlenmiş ikili veya kişisel bilg
 sızıp sızmadığına bakar.
 
 ```bat
-powershell -File tools	esterify-release.ps1
+powershell -File tools\test\verify-release.ps1
 ```
 
 ### Öz test
@@ -393,7 +393,7 @@ Yönetici gerekmez:
 tools\selftest\build-selftest.cmd
 ```
 
-64 kontrol yapar: WinDivert interop yapısının bayt boyutunu ve bit
+113 kontrol yapar: WinDivert interop yapısının bayt boyutunu ve bit
 konumlarını doğrular (yanlış olsa sürücü belleği sessizce bozardı), filtre söz
 dizimini **gerçek WinDivert kütüphanesine** derletir, sahte ClientHello'yu kendi
 ayrıştırıcısına okutur, SNI ve Host ayrıştırıcılarını kırpılmış ve bozuk verilere
@@ -421,7 +421,7 @@ kayıp oranı değişmedi.
 etodpx **açıkken** çalıştır — 67 kontrol, yönetici gerekmez:
 
 ```bat
-tools	est	est.cmd
+tools\test\test.cmd
 ```
 
 Neyi ölçtüğü:
