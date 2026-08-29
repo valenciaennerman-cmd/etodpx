@@ -239,8 +239,7 @@ namespace Etodpx
             foreach (string cmd in DohRestoreCommands(backup)) set += cmd;
 
             ProcessResult run = RunPowerShell(
-                "$ErrorActionPreference='Stop';" +
-                "$n=Join-Path $env:SystemRoot 'System32\\netsh.exe';" + set +
+                "$ErrorActionPreference='Stop';" + set +
                 "Clear-DnsClientCache;'ETODPX_DNS_RESTORED=1'");
             if (run.Success && Marker(run.Output, "ETODPX_DNS_RESTORED") == "1") return true;
             error = CleanError(run);
@@ -267,6 +266,12 @@ namespace Etodpx
 
         // Yedekteki sifreleme durumunu geri koyan PowerShell parcalari.
         // Kayit bizden once yoksa siliniyor, varsa eski degerleriyle yaziliyor.
+        //
+        // netsh degil cmdlet: "netsh dnsclient set encryption" yalnizca statik
+        // listede ZATEN olan bir kaydi duzenliyor, yoksa sozdizimi hatasi
+        // veriyor - elle denendiginde de oyle oldu. Ayrica DohBefore'u ancak
+        // Get-DnsClientDohServerAddress varsa dolduruyoruz, yani buraya
+        // gelindiginde cmdlet ailesi kesinlikle mevcut.
         internal static string[] DohRestoreCommands(DnsBackup backup)
         {
             var cmds = new List<string>();
@@ -279,15 +284,17 @@ namespace Etodpx
 
                 if (f[1] == "-")
                 {
-                    cmds.Add("& $n 'dnsclient' 'delete' 'encryption' ('server=" + f[0] + "') | Out-Null;");
+                    cmds.Add("Remove-DnsClientDohServerAddress -ServerAddress " + PsQuote(f[0]) +
+                             " -ErrorAction SilentlyContinue | Out-Null;");
                     continue;
                 }
                 if (f.Length < 4) continue;
 
-                cmds.Add("& $n 'dnsclient' 'set' 'encryption' ('server=" + f[0] + "')" +
-                         " ('dohtemplate=" + f[3] + "') 'dothost=:'" +
-                         " 'autoupgrade=" + (f[1] == "1" ? "yes" : "no") + "'" +
-                         " 'udpfallback=" + (f[2] == "1" ? "yes" : "no") + "' | Out-Null;");
+                cmds.Add("Set-DnsClientDohServerAddress -ServerAddress " + PsQuote(f[0]) +
+                         " -DohTemplate " + PsQuote(f[3]) +
+                         " -AutoUpgrade $" + (f[1] == "1" ? "true" : "false") +
+                         " -AllowFallbackToUdp $" + (f[2] == "1" ? "true" : "false") +
+                         " -ErrorAction SilentlyContinue | Out-Null;");
             }
             return cmds.ToArray();
         }

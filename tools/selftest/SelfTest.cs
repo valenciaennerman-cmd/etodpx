@@ -171,13 +171,20 @@ namespace Etodpx.Test
             string[] cmds = NetworkRepair.DohRestoreCommands(doh);
             Check(cmds.Length == 3, "her sunucu icin bir geri alma komutu",
                   "gelen " + cmds.Length);
-            Check(cmds[0].Contains("'set'") && cmds[0].Contains("autoupgrade=no") &&
-                  cmds[0].Contains("udpfallback=no") && cmds[0].Contains("server=1.1.1.1"),
+            Check(cmds[0].Contains("Set-DnsClientDohServerAddress") &&
+                  cmds[0].Contains("'1.1.1.1'") &&
+                  cmds[0].Contains("-AutoUpgrade $false") &&
+                  cmds[0].Contains("-AllowFallbackToUdp $false"),
                   "onceden kayitli sunucu eski degerleriyle yaziliyor", cmds[0]);
-            Check(cmds[1].Contains("'delete'") && cmds[1].Contains("server=1.0.0.1"),
+            Check(cmds[1].Contains("Remove-DnsClientDohServerAddress") && cmds[1].Contains("'1.0.0.1'"),
                   "bizden once olmayan kayit siliniyor", cmds[1]);
-            Check(cmds[2].Contains("autoupgrade=yes") && cmds[2].Contains("udpfallback=yes"),
+            Check(cmds[2].Contains("-AutoUpgrade $true") && cmds[2].Contains("-AllowFallbackToUdp $true"),
                   "acik olan ayar acik geri konuyor", cmds[2]);
+            // netsh'in "set encryption"i yalnizca statik listede zaten olan bir
+            // kaydi duzenliyor; olmayanda sozdizimi hatasi veriyor.
+            foreach (string c in cmds)
+                Check(!c.Contains("netsh") && !c.Contains("dnsclient"),
+                      "geri alma netsh yerine cmdlet kullaniyor", c);
 
             Check(NetworkRepair.DohRestoreCommands(new DnsBackup()).Length == 0,
                   "eski bicimli yedekte sifreleme ayarina dokunulmuyor");
