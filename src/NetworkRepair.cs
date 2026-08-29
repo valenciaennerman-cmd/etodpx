@@ -167,32 +167,50 @@ namespace Etodpx
                 ? DohTargets
                 : "'1.1.1.1','1.0.0.1'";
 
-            // udpfallback=no makineyi "DoH yoksa hic DNS yok" durumuna sokuyor.
-            // Aginda DoH engelli bir kullanicida ad cozumlemesi tamamen durdu ve
-            // tani "boyle bir kayit yok" dedi. Duz UDP'ye dusmek, ISS'nin
-            // cozumleyicisinde kalmaktan kotu degil - internetin gitmesi kotu.
-            string script =
+            string script = BuildDohScript(servers, backup.InterfaceIndex);
+
+            ProcessResult run = RunPowerShell(script);
+            if (run.Success && Marker(run.Output, "ETODPX_DNS_CHANGED") == "1") return true;
+            error = CleanError(run);
+            return false;
+        }
+
+        // netsh yerine DoH cmdlet'leri.
+        //
+        // "netsh dnsclient set encryption ... dothost=:" bu makinede sozdizimi
+        // hatasi veriyor ama CIKIS KODU 0 donuyor. Eski kod cikis koduna bakip
+        // "kaydedildi" sayiyor, add'e dusen yedek yol hic calismiyordu - yani
+        // sifreli DNS hicbir zaman gercekten kurulmadi. Kullanicinin makinesinde
+        // AutoUpgrade hala False cikmasinin sebebi bu.
+        //
+        // Cmdlet gercek bir hata firlatiyor, ustelik sonucu geri okuyup
+        // dogruluyoruz: sessizce hicbir sey yapmayan bir adim kalmasin.
+        internal static string BuildDohScript(string servers, int interfaceIndex)
+        {
+            return
                 "$ErrorActionPreference='Stop';" +
-                "$n=Join-Path $env:SystemRoot 'System32\\netsh.exe';" +
+                "if(-not (Get-Command Set-DnsClientDohServerAddress -ErrorAction SilentlyContinue))" +
+                "{throw 'Bu Windows surumu sifreli DNS ayarini desteklemiyor'};" +
+                "$t='" + DohTemplate + "';" +
                 "function Set-Doh([string]$s){" +
-                " & $n 'dnsclient' 'set' 'encryption' ('server='+$s)" +
-                "  ('dohtemplate=" + DohTemplate + "') 'dothost=:'" +
-                "  'autoupgrade=yes' 'udpfallback=yes' | Out-Null;" +
-                " if($LASTEXITCODE -ne 0){" +
-                "  & $n 'dnsclient' 'add' 'encryption' ('server='+$s)" +
-                "   ('dohtemplate=" + DohTemplate + "') 'dothost=:'" +
-                "   'autoupgrade=yes' 'udpfallback=yes' | Out-Null;" +
-                "  if($LASTEXITCODE -ne 0){throw ('Sifreli DNS kaydedilemedi: '+$s)}" +
-                " }" +
+                " if(Get-DnsClientDohServerAddress -ServerAddress $s -ErrorAction SilentlyContinue){" +
+                "  Set-DnsClientDohServerAddress -ServerAddress $s -DohTemplate $t" +
+                "   -AutoUpgrade $true -AllowFallbackToUdp $true | Out-Null" +
+                " }else{" +
+                "  Add-DnsClientDohServerAddress -ServerAddress $s -DohTemplate $t" +
+                "   -AutoUpgrade $true -AllowFallbackToUdp $true | Out-Null" +
+                " };" +
+                // Geri okuyup dogrula; yoksa sessiz basarisizlik tekrarlanir.
+                " $v=Get-DnsClientDohServerAddress -ServerAddress $s -ErrorAction SilentlyContinue;" +
+                " if(-not $v -or -not $v.AutoUpgrade){throw ('Sifreli DNS etkinlestirilemedi: '+$s)}" +
                 "};" +
                 "foreach($s in @(" + servers + ")){Set-Doh $s};" +
-                "Set-DnsClientServerAddress -InterfaceIndex " + backup.InterfaceIndex +
+                "Set-DnsClientServerAddress -InterfaceIndex " + interfaceIndex +
                 " -ServerAddresses @(" + servers + ");" +
                 "Clear-DnsClientCache;" +
                 // Sifreli baglanti kurulana kadar sorgular basarisiz olabiliyor.
-                // Sabit bir bekleme yerine ad cozumlemesinin GERCEKTEN calistigini
-                // bekliyoruz; olmazsa burada durup geri aliyoruz - "DNS'te boyle
-                // bir kayit yok" diye yaniltici bir tani uretmektense.
+                // Sabit bekleme yerine ad cozumlemesinin gercekten calistigini
+                // bekliyoruz; olmazsa burada durup geri aliyoruz.
                 "$ok=$false;" +
                 "for($i=0;$i -lt 12;$i++){" +
                 " try{if(@(Resolve-DnsName -Name 'www.microsoft.com' -Type A -DnsOnly" +
@@ -201,11 +219,6 @@ namespace Etodpx
                 "};" +
                 "if(-not $ok){throw 'Yeni DNS ayariyla ad cozumlemesi calismadi'};" +
                 "'ETODPX_DNS_CHANGED=1'";
-
-            ProcessResult run = RunPowerShell(script);
-            if (run.Success && Marker(run.Output, "ETODPX_DNS_CHANGED") == "1") return true;
-            error = CleanError(run);
-            return false;
         }
 
         public static bool Restore(DnsBackup backup, out string error)

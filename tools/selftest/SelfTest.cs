@@ -190,6 +190,21 @@ namespace Etodpx.Test
                   "eski bicimli yedekte sifreleme ayarina dokunulmuyor");
             Check(NetworkRepair.SplitLines("") == null,
                   "bos DoH kaydi bilgi yok demek (null)");
+
+            // Kurulum betigi de netsh'ten cikmali: netsh sozdizimi hatasinda
+            // bile 0 donuyor, yani "kaydedildi" kontrolu hicbir zaman tutmadi.
+            string dohScript = NetworkRepair.BuildDohScript("'1.1.1.1','1.0.0.1'", 12);
+            Check(!dohScript.Contains("netsh"), "sifreli DNS kurulumu netsh kullanmiyor");
+            Check(dohScript.Contains("Add-DnsClientDohServerAddress") &&
+                  dohScript.Contains("Set-DnsClientDohServerAddress"),
+                  "kayit yoksa ekleniyor, varsa guncelleniyor");
+            Check(dohScript.Contains("-AllowFallbackToUdp $true"),
+                  "DoH kurulamazsa duz UDP'ye dusuluyor - makine DNS'siz kalmiyor");
+            Check(dohScript.Contains("if(-not $v -or -not $v.AutoUpgrade)"),
+                  "ayar geri okunup dogrulaniyor");
+            Check(dohScript.Contains("Resolve-DnsName") && dohScript.Contains("cozumlemesi calismadi"),
+                  "ad cozumlemesi calisana kadar bekleniyor");
+            Check(dohScript.Contains("-InterfaceIndex 12"), "sunucular dogru arayuze yaziliyor");
         }
 
         private static void TestTunerDiagnostics()
