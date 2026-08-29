@@ -473,6 +473,7 @@ namespace Etodpx.Ui
         private void RunAutomaticRepair(string tuner)
         {
             TunerRun run = null;
+            TunerRun firstRun = null;
             DnsBackup dnsBackup = null;
             bool dnsMayHaveChanged = false;
             bool keepDns = false;
@@ -489,6 +490,7 @@ namespace Etodpx.Ui
                 RepairProgress("2/4 · DNS ve bağlantı engeli ölçülüyor", "İlk tanı birkaç saniye sürebilir");
                 run = ExecuteTuner(tuner);
                 MergeCopies(run, closedCopies);
+                firstRun = run;
 
                 if (IsDnsProblem(run.Code))
                 {
@@ -543,7 +545,7 @@ namespace Etodpx.Ui
                 catch (Exception ex) { engineError = ex.Message; }
             }
 
-            string logPath = SaveRepairLog(run, repairError, engineError, keepDns);
+            string logPath = SaveRepairLog(run, firstRun, repairError, engineError, keepDns);
 
             if (_closing) return;
             try
@@ -709,7 +711,8 @@ namespace Etodpx.Ui
 
         private static bool IsDnsProblem(string code)
         {
-            return code == "DNS_POISONED" || code == "DNS_UNAVAILABLE" || code == "DNS_UNVERIFIED";
+            return code == "DNS_POISONED" || code == "DNS_BLOCKED" ||
+                   code == "DNS_UNAVAILABLE" || code == "DNS_UNVERIFIED";
         }
 
         private static string OutputMarker(string output, string key)
@@ -749,7 +752,7 @@ namespace Etodpx.Ui
             }
         }
 
-        private static string SaveRepairLog(TunerRun run, string repairError,
+        private static string SaveRepairLog(TunerRun run, TunerRun firstRun, string repairError,
                                             string engineError, bool dnsChanged)
         {
             try
@@ -758,11 +761,21 @@ namespace Etodpx.Ui
                 var sb = new System.Text.StringBuilder();
                 sb.AppendLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                 sb.AppendLine("result=" + (run == null ? "NO_RESULT" : run.Code));
+                if (firstRun != null && !ReferenceEquals(firstRun, run))
+                    sb.AppendLine("first_result=" + firstRun.Code);
                 sb.AppendLine("exit_code=" + (run == null ? -1 : run.ExitCode));
                 sb.AppendLine("encrypted_dns_changed=" + dnsChanged);
                 if (repairError != null) sb.AppendLine("repair_error=" + repairError);
                 if (engineError != null) sb.AppendLine("engine_error=" + engineError);
                 sb.AppendLine();
+                // Iki tur varsa ikisini de yaz. Eskiden yalnizca sonuncusu
+                // kaliyordu ve baslangic durumu raporlardan okunamiyordu.
+                if (firstRun != null && !ReferenceEquals(firstRun, run))
+                {
+                    sb.AppendLine("=== 1. tani (degisiklikten once) ===");
+                    sb.AppendLine(firstRun.Output);
+                    sb.AppendLine("=== 2. tani (sifreli DNS kurulduktan sonra) ===");
+                }
                 if (run != null) sb.Append(run.Output);
                 File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
                 return path;

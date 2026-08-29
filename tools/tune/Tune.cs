@@ -315,7 +315,7 @@ namespace Etodpx.Tune
 
         // --- on teshis
 
-        private enum Diag { Open, NoDns, DnsPoisoned, IpBlocked, SniBlocked, Unreachable }
+        private enum Diag { Open, NoDns, DnsHidden, DnsPoisoned, IpBlocked, SniBlocked, Unreachable }
 
         // Engelin cinsini belirler. etodpx yalnizca SNI engelini asabiliyor; DNS
         // ya da IP engelinde butun stratejileri denemenin anlami yok.
@@ -325,17 +325,18 @@ namespace Etodpx.Tune
             bool anySni = false;
             bool anyOpen = false;
             bool anyNoDns = false;
+            bool anyHidden = false;
             bool anyIpBlocked = false;
             var scanTargets = new List<string>();
             _dnsPoisoned = false;
             _dnsCompareFailed = false;
-            _dnsResolutionFailed = false;
 
             foreach (string host in _targets)
             {
                 Diag d = Diagnose(host);
                 if (d == Diag.DnsPoisoned) _dnsPoisoned = true;
                 if (d == Diag.NoDns) anyNoDns = true;
+                if (d == Diag.DnsHidden) anyHidden = true;
                 if (d == Diag.IpBlocked) anyIpBlocked = true;
                 if (d == Diag.Open) anyOpen = true;
                 string msg;
@@ -343,6 +344,10 @@ namespace Etodpx.Tune
                 {
                     case Diag.NoDns:
                         msg = "alan adi cozulemiyor - DNS'te boyle bir kayit yok";
+                        break;
+                    case Diag.DnsHidden:
+                        // Kaydin var oldugunu az once bagimsiz bir DoH sorgusuyla gorduk.
+                        msg = "kayit var ama sistem DNS'i vermiyor - sifreli DNS bunu asar";
                         break;
                     case Diag.DnsPoisoned:
                         msg = "DNS ZEHIRLI - once DNS'i duzelt, etodpx bunu asamaz";
@@ -431,7 +436,8 @@ namespace Etodpx.Tune
                 WL("  Gercek ve engelli bir site adiyla tekrar dene, ornegin:");
                 WL("    etodpx-tune.exe discord.com");
                 WL();
-                if (_dnsResolutionFailed || anyNoDns) SetResult("DNS_UNAVAILABLE");
+                if (anyHidden) SetResult("DNS_BLOCKED");
+                else if (anyNoDns) SetResult("DNS_UNAVAILABLE");
                 else if (_dnsCompareFailed) SetResult("DNS_UNVERIFIED");
                 else if (anyOpen) SetResult("ALREADY_OPEN");
                 else if (anyIpBlocked) SetResult("IP_BLOCKED");
@@ -455,25 +461,14 @@ namespace Etodpx.Tune
         }
 
         private static bool _dnsPoisoned;
-        private static bool _dnsResolutionFailed;
 
         private static Diag Diagnose(string host)
         {
             System.Net.IPAddress[] ips;
-            try
-            {
-                ips = System.Net.Dns.GetHostAddresses(host);
-                if (ips.Length == 0) return Diag.NoDns;
-            }
-            catch
-            {
-                // Sistem DNS'i tamamen olu olabilir. Bagimsiz bir DoH cevabi kaydin
-                // gercekten var oldugunu gosterir; buna "yazim hatasi" demek yanlis.
-                var independent = ResolveViaDoh(host, "https://1.1.1.1/dns-query");
-                if (independent.Count > 0) _dnsResolutionFailed = true;
-                else _dnsCompareFailed = true;
-                return Diag.NoDns;
-            }
+            try { ips = System.Net.Dns.GetHostAddresses(host); }
+            catch { ips = new System.Net.IPAddress[0]; }
+
+            if (ips.Length == 0) return NoSystemAnswer(host);
 
             foreach (var ip in ips)
                 if (IsKnownPoisonAddress(ip)) return Diag.DnsPoisoned;
@@ -488,6 +483,18 @@ namespace Etodpx.Tune
             // alan adi metnidir.
             if (HandshakeWithSni(ips[0].ToString(), "example.com")) return Diag.SniBlocked;
             return Diag.Unreachable;
+        }
+
+        // Sistem cozumleyicisi cevap vermedi. Bagimsiz bir DoH sorgusu kaydi
+        // buluyorsa kayit VAR, cozumleyici gizliyor demektir - ISS'lerin NXDOMAIN
+        // ile engellemesi boyle gorunur ve sifreli DNS bunu asar. Kayit gercekten
+        // yoksa (yazim hatasi, olu alan adi) yapilacak bir sey yok. Ikisini ayni
+        // kefeye koymak kullaniciyi yanlis yere yolluyordu.
+        private static Diag NoSystemAnswer(string host)
+        {
+            if (ResolveViaDoh(host, "https://1.1.1.1/dns-query").Count > 0) return Diag.DnsHidden;
+            _dnsCompareFailed = true;
+            return Diag.NoDns;
         }
 
         // Referans cozumleyicilere hic ulasilamadi mi. Bazi aglar UDP 53'u kendi
