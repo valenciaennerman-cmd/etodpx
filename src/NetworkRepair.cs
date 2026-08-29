@@ -26,11 +26,21 @@ namespace Etodpx
         // Link-local disi IPv6 adresi var mi. Yoksa IPv6 cozumleyicisi yazmak
         // her sorguya olu bir deneme eklemekten baska ise yaramaz.
         public bool HasGlobalV6;
+        // Dokunacagimiz sunucularin DEGISIKLIKTEN ONCEKI sifreleme ayari.
+        // "sunucu|autoupgrade|udpfallback|sablon" ya da kayit yoksa "sunucu|-".
+        // null = eski bicimli yedek; o dosyalarda bu bilgi yok.
+        public string[] DohBefore;
     }
 
     internal static class NetworkRepair
     {
         private const int CommandTimeoutMs = 20000;
+
+        // Sifreli DNS icin kullandigimiz sunucular. Ayni liste hem kurulumda
+        // hem de geri almada gecerli olmali, yoksa temizlenmeyen kayit kalir.
+        private const string DohTargets =
+            "'1.1.1.1','1.0.0.1','2606:4700:4700::1111','2606:4700:4700::1001'";
+        private const string DohTemplate = "https://cloudflare-dns.com/dns-query";
 
         // Program.AppDir yerine dogrudan - boylece dosya WPF'siz derleniyor ve
         // oz test onu iceri alabiliyor.
@@ -74,6 +84,17 @@ namespace Etodpx
                 " -ErrorAction SilentlyContinue|Where-Object {$_.PrefixOrigin -ne 'WellKnown' -and" +
                 " -not $_.IPAddress.StartsWith('fe80') -and $_.IPAddress -ne '::1'});" +
                 "$enc=[Text.Encoding]::UTF8;" +
+                // Dokunacagimiz sunucularin mevcut sifreleme ayari; geri alma
+                // bunu birebir yerine koyuyor. Cmdlet eski Windows'ta yok.
+                "$doh=@();" +
+                "if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){" +
+                " foreach($s in @(" + DohTargets + ")){" +
+                "  $e=Get-DnsClientDohServerAddress -ServerAddress $s -ErrorAction SilentlyContinue;" +
+                "  if($e){$doh+=($s+'|'+[int][bool]$e.AutoUpgrade+'|'+[int][bool]$e.AllowFallbackToUdp+'|'+$e.DohTemplate)}" +
+                "  else{$doh+=($s+'|-')}" +
+                " }" +
+                "};" +
+                "'ETODPX_DOH_B64='+[Convert]::ToBase64String($enc.GetBytes(($doh -join \"`n\")));" +
                 "'ETODPX_INDEX='+$best.Index;" +
                 "'ETODPX_ALIAS_B64='+[Convert]::ToBase64String($enc.GetBytes($best.Alias));" +
                 "'ETODPX_WAS_DHCP='+$dhcp;" +
@@ -117,6 +138,7 @@ namespace Etodpx
                     HasGlobalV6 = Marker(run.Output, "ETODPX_HAS_V6") == "1",
                     Static4 = SplitServers(Decode(Marker(run.Output, "ETODPX_STATIC4_B64"))),
                     Static6 = SplitServers(Decode(Marker(run.Output, "ETODPX_STATIC6_B64"))),
+                    DohBefore = SplitLines(Decode(Marker(run.Output, "ETODPX_DOH_B64"))),
                     FilePath = path
                 };
                 SaveBackup(backup);
@@ -142,30 +164,42 @@ namespace Etodpx
             // once IPv6 cozumleyicisini soruyor, yani ISS'nin zehirli sunucusu
             // cevap vermeye devam ediyor. Global IPv6 varsa iki aileyi de yaziyoruz.
             string servers = backup.HasGlobalV6
-                ? "'1.1.1.1','1.0.0.1','2606:4700:4700::1111','2606:4700:4700::1001'"
-                : "'1.1.1.1','1.0.0.1'";
-            string dohHosts = backup.HasGlobalV6
-                ? "'1.1.1.1','1.0.0.1','2606:4700:4700::1111','2606:4700:4700::1001'"
+                ? DohTargets
                 : "'1.1.1.1','1.0.0.1'";
 
+            // udpfallback=no makineyi "DoH yoksa hic DNS yok" durumuna sokuyor.
+            // Aginda DoH engelli bir kullanicida ad cozumlemesi tamamen durdu ve
+            // tani "boyle bir kayit yok" dedi. Duz UDP'ye dusmek, ISS'nin
+            // cozumleyicisinde kalmaktan kotu degil - internetin gitmesi kotu.
             string script =
                 "$ErrorActionPreference='Stop';" +
                 "$n=Join-Path $env:SystemRoot 'System32\\netsh.exe';" +
                 "function Set-Doh([string]$s){" +
                 " & $n 'dnsclient' 'set' 'encryption' ('server='+$s)" +
-                "  'dohtemplate=https://cloudflare-dns.com/dns-query' 'dothost=:'" +
-                "  'autoupgrade=yes' 'udpfallback=no' | Out-Null;" +
+                "  ('dohtemplate=" + DohTemplate + "') 'dothost=:'" +
+                "  'autoupgrade=yes' 'udpfallback=yes' | Out-Null;" +
                 " if($LASTEXITCODE -ne 0){" +
                 "  & $n 'dnsclient' 'add' 'encryption' ('server='+$s)" +
-                "   'dohtemplate=https://cloudflare-dns.com/dns-query' 'dothost=:'" +
-                "   'autoupgrade=yes' 'udpfallback=no' | Out-Null;" +
+                "   ('dohtemplate=" + DohTemplate + "') 'dothost=:'" +
+                "   'autoupgrade=yes' 'udpfallback=yes' | Out-Null;" +
                 "  if($LASTEXITCODE -ne 0){throw ('Sifreli DNS kaydedilemedi: '+$s)}" +
                 " }" +
                 "};" +
-                "foreach($s in @(" + dohHosts + ")){Set-Doh $s};" +
+                "foreach($s in @(" + servers + ")){Set-Doh $s};" +
                 "Set-DnsClientServerAddress -InterfaceIndex " + backup.InterfaceIndex +
                 " -ServerAddresses @(" + servers + ");" +
                 "Clear-DnsClientCache;" +
+                // Sifreli baglanti kurulana kadar sorgular basarisiz olabiliyor.
+                // Sabit bir bekleme yerine ad cozumlemesinin GERCEKTEN calistigini
+                // bekliyoruz; olmazsa burada durup geri aliyoruz - "DNS'te boyle
+                // bir kayit yok" diye yaniltici bir tani uretmektense.
+                "$ok=$false;" +
+                "for($i=0;$i -lt 12;$i++){" +
+                " try{if(@(Resolve-DnsName -Name 'www.microsoft.com' -Type A -DnsOnly" +
+                "  -ErrorAction Stop).Count -gt 0){$ok=$true;break}}catch{}" +
+                " Start-Sleep -Milliseconds 800" +
+                "};" +
+                "if(-not $ok){throw 'Yeni DNS ayariyla ad cozumlemesi calismadi'};" +
                 "'ETODPX_DNS_CHANGED=1'";
 
             ProcessResult run = RunPowerShell(script);
@@ -198,8 +232,15 @@ namespace Etodpx
                        " -ServerAddresses @(" + string.Join(",", values.ToArray()) + ");";
             }
 
+            // Sunucu adreslerini geri koymak yetmiyor: netsh ile yazdigimiz
+            // sifreleme ayari makine genelinde ve sunucuya bagli kaliyor.
+            // Kullanicinin DNS'i zaten 1.1.1.1 ise geri alma sonrasi bile
+            // "DoH zorunlu" durumunda kaliyordu.
+            foreach (string cmd in DohRestoreCommands(backup)) set += cmd;
+
             ProcessResult run = RunPowerShell(
-                "$ErrorActionPreference='Stop';" + set +
+                "$ErrorActionPreference='Stop';" +
+                "$n=Join-Path $env:SystemRoot 'System32\\netsh.exe';" + set +
                 "Clear-DnsClientCache;'ETODPX_DNS_RESTORED=1'");
             if (run.Success && Marker(run.Output, "ETODPX_DNS_RESTORED") == "1") return true;
             error = CleanError(run);
@@ -224,6 +265,40 @@ namespace Etodpx
             return backup.Servers;
         }
 
+        // Yedekteki sifreleme durumunu geri koyan PowerShell parcalari.
+        // Kayit bizden once yoksa siliniyor, varsa eski degerleriyle yaziliyor.
+        internal static string[] DohRestoreCommands(DnsBackup backup)
+        {
+            var cmds = new List<string>();
+            if (backup == null || backup.DohBefore == null) return cmds.ToArray();
+
+            foreach (string line in backup.DohBefore)
+            {
+                string[] f = line.Split('|');
+                if (f.Length < 2 || f[0].Length == 0) continue;
+
+                if (f[1] == "-")
+                {
+                    cmds.Add("& $n 'dnsclient' 'delete' 'encryption' ('server=" + f[0] + "') | Out-Null;");
+                    continue;
+                }
+                if (f.Length < 4) continue;
+
+                cmds.Add("& $n 'dnsclient' 'set' 'encryption' ('server=" + f[0] + "')" +
+                         " ('dohtemplate=" + f[3] + "') 'dothost=:'" +
+                         " 'autoupgrade=" + (f[1] == "1" ? "yes" : "no") + "'" +
+                         " 'udpfallback=" + (f[2] == "1" ? "yes" : "no") + "' | Out-Null;");
+            }
+            return cmds.ToArray();
+        }
+
+        // Satir basina bir kayit; bos gelirse null (bilgi yok) doner.
+        internal static string[] SplitLines(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return null;
+            return value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
         // NameServer metni virgul ya da bosluk ayrimli geliyor.
         internal static string[] SplitServers(string value)
         {
@@ -243,6 +318,7 @@ namespace Etodpx
                 "has_global_v6=" + (backup.HasGlobalV6 ? "true" : "false"),
                 "static4_b64=" + Encode(string.Join("\n", backup.Static4 ?? new string[0])),
                 "static6_b64=" + Encode(string.Join("\n", backup.Static6 ?? new string[0])),
+                "doh_before_b64=" + Encode(string.Join("\n", backup.DohBefore ?? new string[0])),
                 "servers_b64=" + Encode(string.Join("\n", backup.Servers ?? new string[0]))
             };
             File.WriteAllLines(backup.FilePath, lines, new UTF8Encoding(false));
@@ -257,7 +333,7 @@ namespace Etodpx
                 string alias = string.Empty, servers = string.Empty;
                 bool wasDhcp = false, hasV6 = false;
                 // null kalirlarsa dosya eski bicimlidir; RestoreServers buna gore davranir.
-                string[] static4 = null, static6 = null;
+                string[] static4 = null, static6 = null, dohBefore = null;
                 foreach (string raw in File.ReadAllLines(path))
                 {
                     int eq = raw.IndexOf('=');
@@ -270,6 +346,7 @@ namespace Etodpx
                     else if (key == "has_global_v6") bool.TryParse(value, out hasV6);
                     else if (key == "static4_b64") static4 = SplitServers(Decode(value));
                     else if (key == "static6_b64") static6 = SplitServers(Decode(value));
+                    else if (key == "doh_before_b64") dohBefore = SplitLines(Decode(value));
                     else if (key == "servers_b64") servers = Decode(value);
                 }
                 if (index <= 0) return null;
@@ -281,6 +358,7 @@ namespace Etodpx
                     HasGlobalV6 = hasV6,
                     Static4 = static4,
                     Static6 = static6,
+                    DohBefore = dohBefore,
                     Servers = servers.Length == 0
                         ? new string[0]
                         : servers.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries),

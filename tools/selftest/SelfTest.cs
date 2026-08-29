@@ -155,6 +155,34 @@ namespace Etodpx.Test
             var legacyDhcp = new DnsBackup { WasDhcp = true, Servers = new string[0] };
             Check(NetworkRepair.RestoreServers(legacyDhcp).Length == 0,
                   "eski bicimli DHCP yedegi DHCP'ye donuyor");
+
+            // Sifreleme ayari da geri alinmali. netsh ile yazilan kayit makine
+            // genelinde ve sunucuya bagli; birakilirsa DNS'i zaten 1.1.1.1 olan
+            // kullanici geri alma sonrasi bile "DoH zorunlu" durumunda kaliyordu.
+            var doh = new DnsBackup
+            {
+                DohBefore = new[]
+                {
+                    "1.1.1.1|0|0|https://cloudflare-dns.com/dns-query",
+                    "1.0.0.1|-",
+                    "2606:4700:4700::1111|1|1|https://cloudflare-dns.com/dns-query"
+                }
+            };
+            string[] cmds = NetworkRepair.DohRestoreCommands(doh);
+            Check(cmds.Length == 3, "her sunucu icin bir geri alma komutu",
+                  "gelen " + cmds.Length);
+            Check(cmds[0].Contains("'set'") && cmds[0].Contains("autoupgrade=no") &&
+                  cmds[0].Contains("udpfallback=no") && cmds[0].Contains("server=1.1.1.1"),
+                  "onceden kayitli sunucu eski degerleriyle yaziliyor", cmds[0]);
+            Check(cmds[1].Contains("'delete'") && cmds[1].Contains("server=1.0.0.1"),
+                  "bizden once olmayan kayit siliniyor", cmds[1]);
+            Check(cmds[2].Contains("autoupgrade=yes") && cmds[2].Contains("udpfallback=yes"),
+                  "acik olan ayar acik geri konuyor", cmds[2]);
+
+            Check(NetworkRepair.DohRestoreCommands(new DnsBackup()).Length == 0,
+                  "eski bicimli yedekte sifreleme ayarina dokunulmuyor");
+            Check(NetworkRepair.SplitLines("") == null,
+                  "bos DoH kaydi bilgi yok demek (null)");
         }
 
         private static void TestTunerDiagnostics()
