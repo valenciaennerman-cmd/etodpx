@@ -12,7 +12,7 @@
 # Yonetici gerekmez.
 #   powershell -ExecutionPolicy Bypass -File tools\make-release.ps1
 
-param([string]$Version = '2.1')
+param([string]$Version = '2.2')
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot

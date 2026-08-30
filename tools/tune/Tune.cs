@@ -210,6 +210,23 @@ namespace Etodpx.Tune
                 best = null;
             }
 
+            // Acilmayani acmak yetmiyor: calisani bozmamak da sart. Ozellikle
+            // fake_ttl, olcum hedefinden yakin bir sunucuya sahte paketi
+            // ULASTIRIP o baglantiyi bozabiliyor. Bozan strateji eleniyor ve
+            // en iyi kalanla devam ediliyor.
+            while (best != null && !SurvivesCollateral(best))
+            {
+                WL("  " + best.Name + " calisan baglantilari bozuyor; elendi.");
+                rejected.Add(best);
+                best = null;
+                bestScore = baseline;
+                foreach (var kv in results)
+                {
+                    if (rejected.Contains(kv.Key)) continue;
+                    if (kv.Value > bestScore) { bestScore = kv.Value; best = kv.Key; }
+                }
+            }
+
             WL();
             WL("  --- siralama (esitlikte en guvenli once) ---");
             // Esitlikte deneme sirasi belirleyici: liste sahte paketi sunucuya
@@ -330,6 +347,7 @@ namespace Etodpx.Tune
             var scanTargets = new List<string>();
             _dnsPoisoned = false;
             _dnsCompareFailed = false;
+            _openTargets.Clear();
 
             foreach (string host in _targets)
             {
@@ -338,7 +356,7 @@ namespace Etodpx.Tune
                 if (d == Diag.NoDns) anyNoDns = true;
                 if (d == Diag.DnsHidden) anyHidden = true;
                 if (d == Diag.IpBlocked) anyIpBlocked = true;
-                if (d == Diag.Open) anyOpen = true;
+                if (d == Diag.Open) { anyOpen = true; _openTargets.Add(host); }
                 string msg;
                 switch (d)
                 {
@@ -457,8 +475,73 @@ namespace Etodpx.Tune
                 WL();
                 _targets = scanTargets.ToArray();
             }
+
+            // Kullanici tek bir engelli hedef verdiginde elimizde hic acik hedef
+            // kalmiyor ve yan hasari olcecek bir sey olmuyor. Bilinen, engelli
+            // olmamasi beklenen birkac adresi bu is icin ayrica deniyoruz.
+            foreach (string host in ControlHosts)
+            {
+                if (_openTargets.Contains(host) || Array.IndexOf(_targets, host) >= 0) continue;
+                if (Handshake(host)) _openTargets.Add(host);
+            }
+            if (_openTargets.Count > 0)
+            {
+                WL("  Yan hasar kontrolu : " + string.Join(", ", _openTargets.ToArray()));
+                WL();
+            }
             return true;
         }
+
+        /// Kazanan strateji uygulanmisken, engelli olmayan hedefler hala
+        /// aciliyor mu. Tarama yalnizca "engelliyi acabildi mi" diye bakiyordu;
+        /// calisan bir seyi bozup bozmadigina hic bakilmiyordu.
+        private static bool SurvivesCollateral(Strategy s)
+        {
+            if (_openTargets.Count == 0) return true;
+
+            W("  yan hasar kontrolu".PadRight(42));
+            var cfg = new Config();
+            cfg.QuicMode = "drop";
+            cfg.Threads = 2;
+            s.ApplyTo(cfg);
+
+            var eng = new DpiEngine(cfg);
+            try
+            {
+                eng.Start();
+                Thread.Sleep(250);
+                foreach (string host in _openTargets)
+                {
+                    // Iki deneme: tek bir sanssiz el sikismasi calisan bir
+                    // stratejiyi elemesin.
+                    if (Handshake(host) || Handshake(host)) continue;
+                    WL("BOZULDU: " + host);
+                    return false;
+                }
+                WL("temiz");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                W("(motor hatasi: " + ex.Message + ") ");
+                WL("atlandi");
+                return true;
+            }
+            finally
+            {
+                try { eng.Stop(); } catch { }
+                Thread.Sleep(400);
+            }
+        }
+
+        // Yan hasar kontrolu icin engelli OLMAYAN hedefler. Tarama bunlari
+        // olcume katmiyor (her stratejide acilir, puani sisirirler) ama kazanan
+        // strateji onlari BOZMAMALI. fake_ttl tam olarak bunu yapabiliyor:
+        // sahte paket olcum hedefinden yakin bir sunucuya ulasip akisa cop
+        // sokuyor. "Discord aciliyor ama yayin acilmiyor" tablosu boyle olusuyor.
+        private static readonly string[] ControlHosts =
+            { "cdn.discordapp.com", "www.cloudflare.com" };
+        private static readonly List<string> _openTargets = new List<string>();
 
         private static bool _dnsPoisoned;
 
