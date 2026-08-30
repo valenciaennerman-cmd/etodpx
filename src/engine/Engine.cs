@@ -31,6 +31,7 @@ namespace Etodpx.Engine
         private IntPtr _tcpHandle = WinDivert.InvalidHandle;
         private IntPtr _quicHandle = WinDivert.InvalidHandle;
         private readonly List<Thread> _threads = new List<Thread>();
+        private Hostlist _hosts;
         private volatile bool _running;
         private int _generation;
         private int _faultRaised;
@@ -41,6 +42,8 @@ namespace Etodpx.Engine
         public Stats Stats { get { return _stats; } }
         public bool IsRunning { get { return _running; } }
         public string ActiveTcpFilter { get; private set; }
+        // Kac alan adina dokunuluyor; 0 = liste yok, hepsine dokunuluyor.
+        public int HostlistCount { get; private set; }
         public string ActiveQuicFilter { get; private set; }
         public string QuicWarning { get; private set; }
 
@@ -93,6 +96,9 @@ namespace Etodpx.Engine
                 else QuicWarning = "QUIC filtresi sürücü tarafından kabul edilmedi.";
             }
 
+            _hosts = LoadHostlist();
+            HostlistCount = _hosts == null ? 0 : _hosts.Count;
+
             _running = true;
             _stats.MarkStart();
 
@@ -133,12 +139,14 @@ namespace Etodpx.Engine
             _threads.Clear();
 
             IntPtr tcp = _tcpHandle, quic = _quicHandle;
+            Hostlist hosts = _hosts;
             _tcpHandle = WinDivert.InvalidHandle;
             _quicHandle = WinDivert.InvalidHandle;
+            _hosts = null;
 
             if (allExited)
             {
-                CloseHandles(tcp, quic);
+                CloseHandles(tcp, quic, hosts);
                 return;
             }
 
@@ -152,14 +160,31 @@ namespace Etodpx.Engine
                     try { t.Join(); }
                     catch { }
                 }
-                CloseHandles(tcp, quic);
+                CloseHandles(tcp, quic, hosts);
             });
         }
 
-        private static void CloseHandles(IntPtr tcp, IntPtr quic)
+        private static void CloseHandles(IntPtr tcp, IntPtr quic, Hostlist hosts)
         {
             if (tcp != WinDivert.InvalidHandle) WinDivert.WinDivertClose(tcp);
             if (quic != WinDivert.InvalidHandle) WinDivert.WinDivertClose(quic);
+            // Is parcaciklari cikmadan serbest birakilamaz: sicak yol bu blogu
+            // pointer uzerinden okuyor.
+            if (hosts != null) hosts.Dispose();
+        }
+
+        // Ayar dosyasindaki yol goreceliyse exe klasorune gore cozulur.
+        private Hostlist LoadHostlist()
+        {
+            string path = _cfg.HostlistPath;
+            if (string.IsNullOrEmpty(path)) return null;
+            if (!Path.IsPathRooted(path))
+            {
+                string dir = Path.GetDirectoryName(
+                    System.Reflection.Assembly.GetExecutingAssembly().Location);
+                path = Path.Combine(dir, path);
+            }
+            return Hostlist.Load(path, _cfg.Warnings);
         }
 
         public void Dispose() { Stop(); }
@@ -253,7 +278,7 @@ namespace Etodpx.Engine
             string terminalFault = null;
             try
             {
-                w = new DesyncWorker(_cfg, _stats, handle, seed);
+                w = new DesyncWorker(_cfg, _stats, handle, seed, _hosts);
                 int consecutiveErrors = 0;
 
                 while (_running && generation == Volatile.Read(ref _generation))

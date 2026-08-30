@@ -1,0 +1,27 @@
+# etodpx - dokunulacak alan adlari
+#
+# Bu dosya varsa YALNIZCA buradaki adlara desync uygulanir. Dosya yoksa
+# 443'e giden butun ClientHello'lara uygulanir - o zaman engelli olmayan
+# sunucularla kurulan baglantilar da bolunur. DPI kutusu tuhaf gordugu
+# paketi dusurunce Windows yeniden gonderir ve baglanti TCP zaman asimi
+# merdivenini tirmanir: oyun icinde 30 saniyelik donma, Discord'da yayin
+# acilmamasi buradan gelir.
+#
+# Son ek eslesmesi nokta sinirindadir:
+#   discord.com  ->  discord.com ve cdn.discord.com eslesir
+#                    notdiscord.com ESLESMEZ
+#
+# Satir basinda # ya da ; varsa yorumdur. Bastaki "*." ve "." yok sayilir.
+#
+# Engellenen baska bir site icin adini alt satira ekleyip etodpx'i
+# yeniden baslat. Listeyi tamamen devre disi birakmak icin etodpx.conf
+# icinde  hostlist =  satirini bos birak.
+
+# Buraya YALNIZCA gercekten engelli adlari ekle. Engelli olmayan bir adi
+# eklemek onu bozar - yayin acilmamasi, resimlerin yuklenmemesi gibi.
+# Ozellikle ses/goruntu (discord.media) ve CDN (discordapp.net) adlarini
+# gerek olmadikca ekleme.
+
+discord.com
+discordapp.com
+discord.gg

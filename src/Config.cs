@@ -24,6 +24,9 @@ namespace Etodpx
         public bool HttpHostCase = false;         // "Host:" -> "hOSt:" (RFC uyumlu ama varsayilan kapali)
 
         // --- kapsam ---
+        // Alan adi listesi. Dosya varsa YALNIZCA icindeki adlara dokunulur;
+        // yoksa butun adlara. Bos birakilirsa liste hic kullanilmaz.
+        public string HostlistPath = "hosts.txt";
         public bool EnableHttp = true;
         public bool EnableTls = true;
         public bool EnableIPv6 = true;
@@ -93,6 +96,7 @@ namespace Etodpx
             FakeSni = other.FakeSni;
             HttpHostCase = other.HttpHostCase;
 
+            HostlistPath = other.HostlistPath;
             EnableHttp = other.EnableHttp;
             EnableTls = other.EnableTls;
             EnableIPv6 = other.EnableIPv6;
@@ -130,6 +134,7 @@ namespace Etodpx
                 case "fake_count": FakeCount = Int(k, v, FakeCount, 1, 8); break;
                 case "fake_sni": FakeSni = Host(v, FakeSni); break;
                 case "http_host_case": HttpHostCase = Bool(k, v, HttpHostCase); break;
+                case "hostlist": HostlistPath = v; break;
                 case "enable_http": EnableHttp = Bool(k, v, EnableHttp); break;
                 case "enable_tls": EnableTls = Bool(k, v, EnableTls); break;
                 case "enable_ipv6": EnableIPv6 = Bool(k, v, EnableIPv6); break;

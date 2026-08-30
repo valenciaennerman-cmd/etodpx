@@ -12,7 +12,7 @@
 # Yonetici gerekmez.
 #   powershell -ExecutionPolicy Bypass -File tools\make-release.ps1
 
-param([string]$Version = '2.2')
+param([string]$Version = '2.3')
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
@@ -54,6 +54,7 @@ foreach ($f in $files) { Copy-Item $f $Out -Force }
 
 # Ayar: bin\ icindeki DEGIL, depodaki guvenli sablon.
 Copy-Item 'etodpx.conf' (Join-Path $Out 'etodpx.conf') -Force
+Copy-Item 'hosts.txt'   (Join-Path $Out 'hosts.txt')   -Force
 
 # --- 4) kullanim notu ------------------------------------------------------
 $oku = @'

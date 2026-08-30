@@ -69,6 +69,7 @@ del /q "bin\etodpx.old.exe" >nul 2>nul
 rem --- yan dosyalar ----------------------------------------------------------
 copy /y "src\etodpx.exe.config" "bin\etodpx.exe.config" >nul
 if not exist "bin\etodpx.conf" copy /y "etodpx.conf" "bin\etodpx.conf" >nul
+if not exist "bin\hosts.txt" copy /y "hosts.txt" "bin\hosts.txt" >nul
 
 echo.
 echo   TAMAM  ^-^>  bin\etodpx.exe

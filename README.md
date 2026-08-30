@@ -36,7 +36,7 @@ derleniyor. Karışmasın diye:
 | `build.cmd` | Yalnızca derler, hiçbir şey açmaz | Kaynak kodu değiştirdiysen |
 | `tools\setup-windivert.cmd` | Sürücüyü indirir | `etodpx.cmd` zaten çağırıyor; elle kurmak istersen |
 | `bin\etodpx-tune.exe` | Arayüzün kullandığı otomatik ölçüm aracı | Normal kullanıcı bunu elle açmaz |
-| `tools\test\test-all.cmd` | 220 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
+| `tools\test\test-all.cmd` | 232 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
 
 Yani sıradan bir kullanıcı için tek adım var:
 
@@ -371,7 +371,7 @@ tools\test\test-all.cmd
 
 | Paket | Kontrol | Yönetici | Ne yapar |
 |---|---|---|---|
-| Öz test | 128 | hayır | Motor mantığı, ayar doğrulama, ayrıştırıcılar, filtre söz dizimi |
+| Öz test | 140 | hayır | Motor mantığı, ayar doğrulama, ayrıştırıcılar, filtre söz dizimi |
 | Yayın denetimi | 25 | hayır | Temiz klonu sıfırdan derler, sızıntı arar |
 | Ağ paketi | 67 | etodpx açık olmalı | Gerçek bağlantılar, ping, hız, yan hasar |
 
@@ -393,7 +393,7 @@ Yönetici gerekmez:
 tools\selftest\build-selftest.cmd
 ```
 
-128 kontrol yapar: WinDivert interop yapısının bayt boyutunu ve bit
+140 kontrol yapar: WinDivert interop yapısının bayt boyutunu ve bit
 konumlarını doğrular (yanlış olsa sürücü belleği sessizce bozardı), filtre söz
 dizimini **gerçek WinDivert kütüphanesine** derletir, sahte ClientHello'yu kendi
 ayrıştırıcısına okutur, SNI ve Host ayrıştırıcılarını kırpılmış ve bozuk verilere

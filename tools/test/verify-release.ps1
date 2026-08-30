@@ -65,8 +65,12 @@ T 'butun kaynak dosyalari git takibinde' {
     $onDisk = @(Get-ChildItem -Recurse -Filter *.cs -Path 'src', 'tools' |
                 ForEach-Object { $_.FullName.Substring($Root.Length + 1) })
     $missing = @($onDisk | Where-Object { $tracked -notcontains $_ })
-    if ($missing.Count -eq 0) { @('ok', "$($onDisk.Count) dosya takipte") }
-    else { @('HATA', 'takip edilmiyor: ' + ($missing -join ', ')) }
+    if ($missing.Count -eq 0) { return @('ok', "$($onDisk.Count) dosya takipte") }
+    # Adlari acikca metne cevir: bos bir liste mesaji denetimi ise yaramaz hale
+    # getiriyordu - hangi dosyanin eksik oldugu yazmiyordu.
+    $names = (($missing | ForEach-Object { [string]$_ }) -join ', ')
+    if (-not $names) { $names = "$($missing.Count) dosya" }
+    @('HATA', 'takip edilmiyor: ' + $names)
 }
 T 'surum numaralari tutarli' {
     $ai = (Select-String -Path 'src\AssemblyInfo.cs' -Pattern 'AssemblyFileVersion\("([^"]+)"' -ErrorAction SilentlyContinue).Matches.Groups[1].Value

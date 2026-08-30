@@ -14,6 +14,7 @@ namespace Etodpx.Engine
         private readonly Config _cfg;
         private readonly Stats _stats;
         private readonly IntPtr _handle;
+        private readonly Hostlist _hosts;      // null = butun adlara dokun
 
         private readonly IntPtr _recvMem, _workMem, _fakeTlsMem, _fakeHttpMem, _quicMem;
         private readonly byte* _recv;
@@ -31,11 +32,14 @@ namespace Etodpx.Engine
         private readonly int _fixedSplitPos;      // >0 ise SplitPos sayisal verilmis
         private readonly bool _splitAtHostStart;
 
-        public DesyncWorker(Config cfg, Stats stats, IntPtr handle, int seed)
+        // hosts = null: liste kullanilmaz, butun adlara dokunulur. Oz test
+        // eslesme disi davranisi bu sekilde siniyor.
+        public DesyncWorker(Config cfg, Stats stats, IntPtr handle, int seed, Hostlist hosts = null)
         {
             _cfg = cfg;
             _stats = stats;
             _handle = handle;
+            _hosts = hosts;
 
             _recvMem = Marshal.AllocHGlobal(BufSize);
             _workMem = Marshal.AllocHGlobal(BufSize);
@@ -199,6 +203,12 @@ namespace Etodpx.Engine
 
             if (!wantFake && !wantSplit) return false;
 
+            // Liste varsa listede olmayan hicbir ada dokunmuyoruz. Engelli
+            // olmayan bir sunucuya giden paketi bolmenin faydasi yok; DPI onu
+            // tuhaf bulup dusurunce baglanti TCP zaman asimi merdivenini
+            // tirmaniyor ve uygulama saniyelerce donuyor.
+            if (_hosts != null && !InHostlist(pl, plLen, isTls)) return false;
+
             // bolme konumunu sec
             int splitPos = -1;
             if (wantSplit)
@@ -284,6 +294,15 @@ namespace Etodpx.Engine
 
             _stats.BumpConnection();
             return true;
+        }
+
+        // Yukteki alan adi listede mi. Ad okunamiyorsa dokunmuyoruz: ne
+        // oldugunu bilmedigimiz bir baglantiyi bozma riskini almaya degmez.
+        private bool InHostlist(byte* pl, int plLen, bool isTls)
+        {
+            HostLocation h = isTls ? Hostname.FindSni(pl, plLen) : Hostname.FindHttpHost(pl, plLen);
+            if (!h.Found) return false;
+            return _hosts.Match(pl + h.Offset, h.Length);
         }
 
         // -1 donerse bolme yapilmaz.

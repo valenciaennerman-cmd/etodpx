@@ -39,6 +39,7 @@ namespace Etodpx.Test
             TestInterop();
             TestConfig();
             TestConfigCopy();
+            TestHostlist();
             TestDnsRestore();
             TestTunerDiagnostics();
             TestFilters();
@@ -106,6 +107,61 @@ namespace Etodpx.Test
                   "bulunan " + fields.Length);
             Check(missed.Count == 0, "CopyFrom butun ayar alanlarini tasiyor",
                   "tasinmayan: " + string.Join(", ", missed.ToArray()));
+        }
+
+        // --- alan adi listesi
+        // Liste yokken etodpx 443'e giden HER ClientHello'yu boluyordu. Engelli
+        // olmayan sunucuya giden baglantiyi bolmenin faydasi yok ama DPI onu
+        // dusurunce uygulama TCP zaman asimi kadar donuyor. Eslesme kurallari
+        // bu yuzden dar: son ek yalnizca nokta sinirinda sayilir.
+        private static bool Hits(Hostlist list, string host)
+        {
+            byte[] b = Encoding.ASCII.GetBytes(host);
+            fixed (byte* p = b) return list.Match(p, b.Length);
+        }
+
+        private static void TestHostlist()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- alan adi listesi");
+
+            string path = Path.Combine(Path.GetTempPath(), "etodpx-hostlist-test.txt");
+            File.WriteAllLines(path, new[]
+            {
+                "# yorum satiri", "", "discord.com", "*.example.org", "TRAILING.NET."
+            });
+
+            Hostlist list = Hostlist.Load(path, null);
+            Check(list != null && list.Count == 3,
+                  "yorum ve bos satirlar atlanarak okundu",
+                  list == null ? "null" : "sayi " + list.Count);
+            if (list == null) return;
+
+            Check(Hits(list, "discord.com"), "tam eslesme");
+            Check(Hits(list, "cdn.discord.com"), "alt alan adi eslesiyor");
+            Check(Hits(list, "DISCORD.COM"), "buyuk harf duyarsiz");
+            Check(Hits(list, "a.b.example.org"), "bastaki *. yok sayiliyor");
+            Check(Hits(list, "trailing.net"), "sondaki nokta kirpiliyor");
+
+            Check(!Hits(list, "notdiscord.com"),
+                  "nokta sinirinda olmayan son ek ESLESMIYOR");
+            Check(!Hits(list, "discord.com.baskasite.net"),
+                  "adin ortasindaki eslesme sayilmiyor");
+            Check(!Hits(list, "google.com"), "listede olmayan ad eslesmiyor");
+            Check(!Hits(list, "com"), "kisa parca eslesmiyor");
+
+            list.Dispose();
+
+            Check(Hostlist.Load(Path.Combine(Path.GetTempPath(), "etodpx-yok-boyle.txt"), null) == null,
+                  "dosya yoksa null (butun adlara dokunulur)");
+
+            string empty = Path.Combine(Path.GetTempPath(), "etodpx-hostlist-bos.txt");
+            File.WriteAllLines(empty, new[] { "# yalniz yorum" });
+            var warn = new System.Collections.Generic.List<string>();
+            Check(Hostlist.Load(empty, warn) == null && warn.Count == 1,
+                  "bos liste uyari uretip null donuyor");
+
+            try { File.Delete(path); File.Delete(empty); } catch { }
         }
 
         // --- DNS geri alma
