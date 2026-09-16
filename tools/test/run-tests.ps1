@@ -1,6 +1,6 @@
 # etodpx - kapsamli test paketi
 #
-# 67 kontrol: motor sagligi, gecikme ve paket kaybi, TLS el sikismalari,
+# 77 kontrol: motor sagligi, gecikme ve paket kaybi, TLS el sikismalari,
 # Discord uclari, yan hasar (yerel ag / 443 disi portlar / UDP) ve kararlilik.
 #
 # Yonetici gerekmez. etodpx ACIK iken calistir.
@@ -222,6 +222,27 @@ $discord = @(
 )
 foreach ($h in $discord) {
     T "TLS $h" { if (TlsHandshake $h) { @('ok', '') } else { @('HATA', 'el sikisma basarisiz') } }.GetNewClosure()
+}
+
+# ======================================================= D2. Roblox uc noktalari
+Section 'D2. Roblox uc noktalari'
+
+# roblox.com Turkiye'de SNI seviyesinde engelli: DNS dogru IP veriyor, TCP
+# kuruluyor, ClientHello gidince RST geliyor. Bu bolum etodpx acikken gecmeli;
+# gecmiyorsa hosts.txt'te roblox.com yok ya da strateji bu hatta calismiyor.
+$roblox = @(
+    'roblox.com','www.roblox.com','apis.roblox.com','auth.roblox.com',
+    'assetgame.roblox.com','gamejoin.roblox.com','clientsettings.roblox.com'
+)
+foreach ($h in $roblox) {
+    T "TLS $h" { if (TlsHandshake $h) { @('ok', '') } else { @('HATA', 'el sikisma basarisiz') } }.GetNewClosure()
+}
+
+# rbxcdn.com engelli DEGIL ve hosts.txt'te yok. Burada kirilirsa listeye
+# gereksiz bir CDN eklenmis demektir: Roblox'ta avatarlar ve resimler gitmez.
+$rbxcdn = @('t0.rbxcdn.com','setup.rbxcdn.com','images.rbxcdn.com')
+foreach ($h in $rbxcdn) {
+    T "TLS $h (yan hasar)" { if (TlsHandshake $h) { @('ok', 'engelsiz CDN bozulmadi') } else { @('HATA', 'CDN bozuldu - hosts.txt fazla genis') } }.GetNewClosure()
 }
 
 # ================================================== E. HTTP (port 80) ve API

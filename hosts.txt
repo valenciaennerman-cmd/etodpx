@@ -25,3 +25,15 @@
 discord.com
 discordapp.com
 discord.gg
+
+# Roblox. Engel SNI seviyesinde olculdu: roblox.com adresleri DNS'te dogru
+# IP donduruyor ve TCP el sikismasi kuruluyor, ama ClientHello gidince
+# baglanti RST ile dusuyor. etodpx tam olarak bunu asar.
+# Son ek eslesmesi butun alt adlari kapsiyor - www, apis, auth, assetgame,
+# gamejoin, clientsettings, ecsv2 icin ayri satir gerekmez.
+roblox.com
+
+# rbxcdn.com BILEREK yok. Olctuk: t0 / c0 / js / images / static / setup
+# .rbxcdn.com hepsi engelsiz aciliyor. Engelli olmayan bir CDN'i listeye
+# koymak yalnizca zarar verir - Roblox'ta avatarlar ve resimler yuklenmez.
+# Resimler gelmiyorsa once o adi olc, dogrulamadan ekleme.

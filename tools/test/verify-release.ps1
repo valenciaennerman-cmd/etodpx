@@ -78,18 +78,47 @@ T 'surum numaralari tutarli' {
     if (-not $ai) { return @('HATA', 'AssemblyInfo.cs okunamadi') }
     if ($ai -ne $mf) { @('HATA', "AssemblyInfo $ai <> manifest $mf") } else { @('ok', $ai) }
 }
+T 'yayin betigi ayni surumu uretiyor' {
+    $ai = (Select-String -Path 'src\AssemblyInfo.cs' -Pattern 'AssemblyFileVersion\("([^"]+)"' -ErrorAction SilentlyContinue).Matches.Groups[1].Value
+    $release = (Select-String -Path 'tools\make-release.ps1' -Pattern "\[string\]\`$Version\s*=\s*'([^']+)'" -ErrorAction SilentlyContinue).Matches.Groups[1].Value
+    if (-not $ai -or -not $release) { return @('HATA', 'surum metni okunamadi') }
+    $parts = @($ai -split '\.')
+    if ($parts.Count -lt 2) { return @('HATA', "gecersiz exe surumu: $ai") }
+    $short = $parts[0] + '.' + $parts[1]
+    if ($release -eq $short) { @('ok', $release) } else { @('HATA', "exe $short <> paket $release") }
+}
+T 'yayin betigi eski EXE paketlemiyor ve imzayi dogru anlatiyor' {
+    $release = Get-Content 'tools\make-release.ps1' -Raw
+    $exitChecks = ([regex]::Matches($release, '\$LASTEXITCODE\s+-ne\s+0')).Count
+    if ($exitChecks -lt 2) { return @('HATA', 'iki derlemenin cikis kodu denetlenmiyor') }
+    if ($release -notmatch '__SMARTSCREEN_NOTU__' -or
+        $release -notmatch '\$SigningThumbprint') {
+        return @('HATA', 'imza durumu kullanim notuna yansimiyor')
+    }
+    @('ok', 'uygulama + ayarlayici cikis kodu ve imza notu denetleniyor')
+}
+T 'derleme ve dokuman 64 bit hedefte anlasiyor' {
+    $build = Get-Content 'build.cmd' -Raw
+    $readme = Get-Content 'README.md' -Raw
+    if ($build -match '/platform:x64' -and $readme -match '64 bit Windows 10/11') {
+        @('ok', 'x64 Windows 10/11')
+    } else { @('HATA', 'platform veya destek metni tutarsiz') }
+}
+T 'eski alan adi listesi bir kez guvenle guncelleniyor' {
+    $build = Get-Content 'build.cmd' -Raw
+    if ($build -match '\.hosts-v2\.4-migrated' -and
+        $build -match 'findstr[^\r\n]+roblox\\\.com' -and
+        $build -match 'echo roblox\.com') {
+        @('ok', 'ozel satirlar korunarak Roblox ekleniyor')
+    } else { @('HATA', 'v2.3 hosts.txt gecisi eksik') }
+}
 
-# git'in takip edecegi dosya listesini cikar (gecici depo, mevcut .git'e dokunmaz)
+# Gercek git indeksindeki dosyalari kullan. Gecici bir depo ile "git add -A"
+# yapmak, yereldeki ic ice calisma agaclarini da yayina katip listeyi bozuyordu.
 $tracked = @()
 if ($hasGit) {
-    $tmpGit = Join-Path ([IO.Path]::GetTempPath()) ("etodpx-verify-" + [guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Force $tmpGit | Out-Null
-    try {
-        git --git-dir="$tmpGit\.git" --work-tree="$Root" init -q 2>$null | Out-Null
-        git --git-dir="$tmpGit\.git" --work-tree="$Root" add -A 2>$null | Out-Null
-        $tracked = git --git-dir="$tmpGit\.git" --work-tree="$Root" ls-files 2>$null
-    } catch {}
-    Remove-Item -Recurse -Force $tmpGit -ErrorAction SilentlyContinue
+    $tracked = @(git ls-files 2>$null)
+    if ($LASTEXITCODE -ne 0) { $tracked = @() }
 }
 
 T 'takip edilen dosya sayisi makul' {
@@ -198,6 +227,7 @@ T 'exe surum bilgisi tasiyor' {
     else { @('ok', $v) }
 }
 T 'ayarlayici temiz kopyada derleniyor' {
+    if (-not $script:cloneOk) { return @('HATA', 'kopya yok') }
     Push-Location $clone
     try {
         cmd /c "tools\tune\build-tune.cmd" 2>&1 | Out-Null
@@ -205,6 +235,7 @@ T 'ayarlayici temiz kopyada derleniyor' {
     } finally { Pop-Location }
 }
 T 'oz test temiz kopyada gecti' {
+    if (-not $script:cloneOk) { return @('HATA', 'kopya yok') }
     Push-Location $clone
     try {
         # WinDivert.dll filtre derleyicisi icin gerekli; kaynak depoda yok,

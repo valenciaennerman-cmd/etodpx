@@ -68,6 +68,7 @@ namespace Etodpx.Tune
         private const int ScanTries = 1;
         private static bool _auto;
         private static bool _manageApp = true;
+        private static bool _requireAllTargets;
         private static bool _etodpxWasRunning;
         private static string _resultCode;
         private static readonly StringBuilder _log = new StringBuilder();
@@ -86,6 +87,7 @@ namespace Etodpx.Tune
             {
                 if (a == "--auto" || a == "-a") _auto = true;
                 else if (a == "--no-manage-app") _manageApp = false;
+                else if (a == "--require-all-targets") _requireAllTargets = true;
                 else rest.Add(a);
             }
             if (rest.Count == 0)
@@ -448,6 +450,16 @@ namespace Etodpx.Tune
                 return false;
             }
 
+            string requiredFailure = RequiredTargetFailure(
+                _requireAllTargets, anyHidden, anyNoDns, anyIpBlocked);
+            if (requiredFailure != null)
+            {
+                WL("  Otomatik onarim butun hedeflerin birlikte calismasini gerektiriyor.");
+                WL();
+                SetResult(requiredFailure);
+                return false;
+            }
+
             if (!anySni)
             {
                 WL("  Taranacak bir SNI engeli bulunamadi, strateji taramasi atlaniyor.");
@@ -490,6 +502,18 @@ namespace Etodpx.Tune
                 WL();
             }
             return true;
+        }
+
+        internal static string RequiredTargetFailure(bool requireAllTargets,
+                                                     bool anyHidden,
+                                                     bool anyNoDns,
+                                                     bool anyIpBlocked)
+        {
+            if (!requireAllTargets) return null;
+            if (anyHidden) return "DNS_BLOCKED";
+            if (anyNoDns) return "DNS_UNAVAILABLE";
+            if (anyIpBlocked) return "IP_BLOCKED";
+            return null;
         }
 
         /// Kazanan strateji uygulanmisken, engelli olmayan hedefler hala
@@ -576,6 +600,9 @@ namespace Etodpx.Tune
         private static Diag NoSystemAnswer(string host)
         {
             if (ResolveViaDoh(host, "https://1.1.1.1/dns-query").Count > 0) return Diag.DnsHidden;
+            // Cloudflare'in JSON ucu bazi aglarda engellenirken Google acik
+            // kalabiliyor. Tek saglayiciya bakip "kayit yok" demek yanlis.
+            if (ResolveViaDoh(host, "https://dns.google/resolve").Count > 0) return Diag.DnsHidden;
             _dnsCompareFailed = true;
             return Diag.NoDns;
         }

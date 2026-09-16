@@ -71,6 +71,17 @@ copy /y "src\etodpx.exe.config" "bin\etodpx.exe.config" >nul
 if not exist "bin\etodpx.conf" copy /y "etodpx.conf" "bin\etodpx.conf" >nul
 if not exist "bin\hosts.txt" copy /y "hosts.txt" "bin\hosts.txt" >nul
 
+rem v2.3'ten gelen bin\hosts.txt kullanicinin ozel satirlarini korumak icin
+rem ezilmiyor. Roblox varsayilani yalnizca ilk v2.4 derlemesinde bir kez
+rem birlestirilir; kullanici daha sonra silerse sonraki derleme geri eklemez.
+if not exist "bin\.hosts-v2.4-migrated" (
+  findstr /r /i /x /c:"[ ]*roblox\.com[ ]*" "bin\hosts.txt" >nul 2>nul || (
+    echo.>>"bin\hosts.txt"
+    echo roblox.com>>"bin\hosts.txt"
+  )
+  type nul >"bin\.hosts-v2.4-migrated"
+)
+
 echo.
 echo   TAMAM  ^-^>  bin\etodpx.exe
 set "WDMISS="

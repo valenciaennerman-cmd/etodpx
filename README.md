@@ -4,7 +4,7 @@ Windows için DPI atlatma aracı. GoodbyeDPI ve zapret ile aynı işi yapar, ama
 tek bir tasarım hedefi var: **ping'e ve hıza dokunmamak.**
 
 Arayüzde günlük kullanım için tek bir büyük düğme var. Bir site açılmazsa
-aynı penceredeki **Discord açılmıyor mu? Tek tıkla düzelt** düğmesi bağlantıya uygun
+aynı penceredeki **Discord / Roblox açılmıyor mu? Tek tıkla düzelt** düğmesi bağlantıya
 ayarı kendi bulur. Koruma başlatılırken bir hata oluşursa bu düğme duruma göre
 **Sorunu düzelt ve tekrar dene** seçeneğine dönüşür.
 
@@ -21,9 +21,9 @@ yönetici olarak açar. Aç, düğmeye bas, siteyi dene.
 
 **DNS'ini şimdiden değiştirme.** Gerekip gerekmediğini araç sana söyleyecek.
 
-Gereken tek şey Windows'un kendisi — .NET SDK, Visual Studio, Node, hiçbiri
-gerekmiyor. Derleyici (`csc.exe`) Windows'la birlikte geliyor, ayrıca bir şey
-kurmuyorsun.
+Desteklenen sistem **64 bit Windows 10/11**'dir. Güncel Windows 10/11 ile gelen
+.NET Framework 4.8 dışında .NET SDK, Visual Studio veya Node gerekmez. Derleyici
+(`csc.exe`) Windows'la birlikte gelir.
 
 ### Hangi dosyayı ne zaman çalıştıracaksın
 
@@ -36,7 +36,7 @@ derleniyor. Karışmasın diye:
 | `build.cmd` | Yalnızca derler, hiçbir şey açmaz | Kaynak kodu değiştirdiysen |
 | `tools\setup-windivert.cmd` | Sürücüyü indirir | `etodpx.cmd` zaten çağırıyor; elle kurmak istersen |
 | `bin\etodpx-tune.exe` | Arayüzün kullandığı otomatik ölçüm aracı | Normal kullanıcı bunu elle açmaz |
-| `tools\test\test-all.cmd` | 232 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
+| `tools\test\test-all.cmd` | 271 kontrolün hepsini çalıştırır | Kod değiştirdiysen, göndermeden önce |
 
 Yani sıradan bir kullanıcı için tek adım var:
 
@@ -51,10 +51,13 @@ paket yakalanamaz.
 
 ### Site hâlâ açılmıyorsa
 
-Ana penceredeki **Discord açılmıyor mu? Tek tıkla düzelt** düğmesine bas. Uygulama
+Ana penceredeki **Discord / Roblox açılmıyor mu? Tek tıkla düzelt** düğmesine bas. Uygulama
 önce sürücüyü, sonra DNS'i, ardından TLS/SNI engelini ve bağlantı stratejisini
 sırayla ölçer. DNS bozuksa aktif internet adaptörünün mevcut ayarını yedekleyip
-şifreli DNS dener; doğrulanmazsa eski ayarı geri yükler. Çalışan stratejiyi
+Cloudflare, Google ve Quad9 şifreli DNS'lerini sırayla dener; her birini Discord
+ve Roblox'un uygulamada kullandığı gerçek uçlarla doğrular ve düz DNS'e sessizce
+düşmez. Hiçbiri çalışmazsa eski
+ayarı geri yükler ve tekrar döngüsü yerine ağ ayarları seçeneğini gösterir. Çalışan stratejiyi
 `etodpx.conf` dosyasına yazar ve korumayı yeniden açar. Komut istemi açmak,
 klasör adresi yazmak veya uygulamayı yeniden başlatmak gerekmez.
 
@@ -63,7 +66,7 @@ klasör adresi yazmak veya uygulamayı yeniden başlatmak gerekmez.
 | Ne diyorsa | Ne yapacaksın |
 |---|---|
 | `zaten aciliyor` | Bir şey yapma, o sitede engel yok |
-| `DNS ZEHIRLI` | DNS'ini **1.1.1.1 / 1.0.0.1** yap — araç adım adım söyler |
+| `DNS ZEHIRLI` | Bir şey yapma; uygulama üç şifreli DNS sağlayıcısını sırayla dener |
 | `SNI engeli` | Hiçbir şey; uygulama stratejileri dener ve doğrusunu uygular |
 | `IP seviyesinde engel` | etodpx bunu aşamaz, VPN gerekir |
 | `alan adi cozulemiyor` | Yazım hatası |
@@ -117,7 +120,8 @@ tekrar açılmaz hale geldi — yani DHCP ile gelen çözümleyici zehirli.
 
 Yine de bunu peşinen yapma: ana penceredeki **Tek tıkla düzelt** akışı DNS'i
 sistem çözümleyicisiyle bağımsız DoH kaynaklarına karşı ölçüyor. Gerekirse aktif
-adaptöre Cloudflare DoH kuruyor; değişiklikten önce
+adaptöre Cloudflare, Google ve Quad9 DoH seçeneklerini sırayla ve şifreleme zorunlu
+olarak deniyor; değişiklikten önce
 `etodpx-dns-backup-<adaptör>.conf` dosyasına geri alma noktası yazıyor.
 
 ---
@@ -242,10 +246,47 @@ etodpx'i yeniden başlat.
 | `fake_badsum` | `false` | Sahteyi bozuk checksum ile yolla |
 | `fake_wrongseq` | `false` | Sahteyi pencere dışı sıra numarasıyla yolla |
 | `http_host_case` | `false` | HTTP `Host:` başlığını RFC uyumlu `hOSt:` biçimine dönüştürür |
+| `hostlist` | `hosts.txt` | Yalnızca bu dosyadaki adlara dokunulur — aşağıya bak |
 | `skip_private` | `true` | Yerel ağ hedeflerine hiç dokunma |
 | `high_priority` | `false` | Süreç önceliğini yükseltir — oyun oynarken kapalı kalsın |
 | `threads` | `0` | 0 = otomatik |
 | `auto_start` | `true` | Uygulama açılınca korumayı başlat |
+
+### Hangi siteler kapsamda — `hosts.txt`
+
+Desync **yalnızca** `bin\hosts.txt` içindeki adlara uygulanır. Kutudan çıktığı
+gibi Discord ve Roblox var:
+
+```
+discord.com
+discordapp.com
+discord.gg
+roblox.com
+```
+
+Eşleşme nokta sınırında son ektir: `roblox.com` satırı `www.roblox.com`,
+`apis.roblox.com`, `gamejoin.roblox.com` gibi bütün alt adları da kapsar —
+alt adlar için ayrı satır yazmana gerek yok. `notroblox.com` eşleşmez.
+
+Başka bir engelli site için adını alt satıra ekleyip etodpx'i yeniden başlat.
+Ama **önce ölç, sonra ekle**: engelli olmayan bir adı listeye koymak yalnızca
+zarar verir. DPI kutusu bölünmüş paketi düşürünce Windows yeniden gönderir ve
+bağlantı TCP zaman aşımı merdivenini tırmanır — oyun içinde 30 saniyelik donma
+buradan gelir.
+
+Roblox'un CDN'i (`rbxcdn.com`) bu yüzden listede **yok**: ölçüldü, engelli
+değil. Avatarlar ve resimler zaten doğrudan yükleniyor; listeye eklemek onları
+bozardı. Bir adın gerçekten engelli olup olmadığını şöyle görürsün:
+
+```bat
+bin\etodpx-tune.exe t0.rbxcdn.com
+```
+
+`zaten aciliyor` diyorsa listeye ekleme.
+
+> Sürüm yükseltirken `build.cmd`, kendi eklediğin satırları korur. v2.3'ten ilk
+> v2.4 derlemesine geçerken `roblox.com` varsayılanını mevcut `bin\hosts.txt`
+> dosyasına bir kez ekler; bundan sonraki kişisel düzenlemelerin üzerine yazmaz.
 
 ### Bir site açılmıyorsa: tahmin etme, ölçtür
 
@@ -341,7 +382,7 @@ etodpx/
     make_icon.py         uygulama simgesini üretir
     localize.py          kaynakları UTF-8 BOM ile normalize eder
     tune/                otomatik strateji bulucu
-    test/                67 kontrollük ağ test paketi
+    test/                77 kontrollük ağ test paketi
     selftest/            öz test (yönetici gerekmez)
     uipreview/           arayüz önizleme + ekran görüntüsü aracı
   bin/                   çıktı — tamamen üretilir, depoya girmez
@@ -371,9 +412,9 @@ tools\test\test-all.cmd
 
 | Paket | Kontrol | Yönetici | Ne yapar |
 |---|---|---|---|
-| Öz test | 140 | hayır | Motor mantığı, ayar doğrulama, ayrıştırıcılar, filtre söz dizimi |
-| Yayın denetimi | 25 | hayır | Temiz klonu sıfırdan derler, sızıntı arar |
-| Ağ paketi | 67 | etodpx açık olmalı | Gerçek bağlantılar, ping, hız, yan hasar |
+| Öz test | 165 | hayır | Motor mantığı, DNS sağlayıcı geçişi, ayar doğrulama, ayrıştırıcılar, filtre söz dizimi |
+| Yayın denetimi | 29 | hayır | Temiz klonu sıfırdan derler, sürüm/platform uyuşmazlığı ve sızıntı arar |
+| Ağ paketi | 77 | etodpx açık olmalı | Gerçek bağlantılar, ping, hız, yan hasar |
 
 **Yayın denetimi** GitHub'a atmadan önce en önemlisi: git'in gerçekten takip
 edeceği dosyaları boş bir klasöre kopyalar ve orada sıfırdan derler. "Bende
@@ -393,7 +434,7 @@ Yönetici gerekmez:
 tools\selftest\build-selftest.cmd
 ```
 
-140 kontrol yapar: WinDivert interop yapısının bayt boyutunu ve bit
+165 kontrol yapar: WinDivert interop yapısının bayt boyutunu ve bit
 konumlarını doğrular (yanlış olsa sürücü belleği sessizce bozardı), filtre söz
 dizimini **gerçek WinDivert kütüphanesine** derletir, sahte ClientHello'yu kendi
 ayrıştırıcısına okutur, SNI ve Host ayrıştırıcılarını kırpılmış ve bozuk verilere
@@ -418,7 +459,7 @@ kayıp oranı değişmedi.
 
 ### Kapsamlı test paketi
 
-etodpx **açıkken** çalıştır — 67 kontrol, yönetici gerekmez:
+etodpx **açıkken** çalıştır — 77 kontrol, yönetici gerekmez:
 
 ```bat
 tools\test\test.cmd
@@ -432,6 +473,7 @@ Neyi ölçtüğü:
 | B | 10 | Ping kaybı/ortalama/jitter, ağ geçidi, 1400 bayt, MTU, Discord IP |
 | C | 20 | Genel sitelerde TLS el sıkışması |
 | D | 8 | Discord uçları |
+| D2 | 10 | Roblox uçları + engelsiz `rbxcdn.com` yan hasar kontrolü |
 | E | 5 | HTTP port 80, Discord API, güncelleme ucu |
 | F | 11 | DNS, localhost, yerel ağ, 443/80 dışı portlar, UDP, IPv6 |
 | G | 1 | İndirme hızı |
@@ -463,9 +505,11 @@ nslookup discord.com
 nslookup discord.com 1.1.1.1
 ```
 
-Uygulama aktif internet rotasını kendisi seçer; kullanılmayan ikinci Wi-Fi
-adaptörüne ayar yazmaz. DoH doğrulanamazsa eski DNS listesini geri yükler ve
-`etodpx-repair.log` tanı raporunu bırakır.
+Uygulama en düşük metrikli gerçek internet rotasını seçer; VPN/tünel açıkken
+fiziksel adaptörü körlemesine tercih etmez. Bir DoH sağlayıcısı doğrulanamazsa
+ilk ayara dönüp sıradakini dener. Üçü de başarısızsa eski DNS listesini geri
+yükler, durumu **KORUMA SINIRLI** olarak gösterir ve aynı testi yinelemek yerine
+**Ağ ayarlarını aç** seçeneğini sunar. Ayrıntılar `etodpx-repair.log` içindedir.
 
 **"WinDivert servisi devre dışı bırakılmış"** — makinede eski bir WinDivert
 servisi kayıtlı ve başlatma tipi *Devre Dışı* yapılmış. Genelde daha önce
@@ -482,6 +526,12 @@ Sonra etodpx'i yeniden aç — WinDivert servisi kendini sıfırdan kurar.
 **"Yönetici izni gerekiyor"** — WinDivert bir çekirdek sürücüsü, yönetici
 olmadan yüklenemez. `bin\etodpx.exe` zaten yönetici isteyecek şekilde
 imzalanmış manifest taşıyor; UAC penceresini onayla.
+
+**"Windows bilgisayarınızı korudu"** — UAC manifesti bir kod imzası değildir.
+Dağıtılan EXE için güvenilir bir kod imzalama sertifikası kullanılmadıkça
+SmartScreen ilk çalıştırmada uyarı gösterebilir. Sertifika hazır olduğunda paket
+`powershell -File tools\make-release.ps1 -SigningThumbprint <parmak-izi>` ile
+imzalı üretilebilir; betik iki EXE'yi de zaman damgalayıp imzayı doğrular.
 
 **"Sürücü Windows tarafından engellendi"** — Windows Güvenliği → Cihaz
 güvenliği → Çekirdek yalıtımı → *Bellek bütünlüğü* açıksa WinDivert

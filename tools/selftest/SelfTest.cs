@@ -40,6 +40,7 @@ namespace Etodpx.Test
             TestConfig();
             TestConfigCopy();
             TestHostlist();
+            TestRepairTargets();
             TestDnsRestore();
             TestTunerDiagnostics();
             TestFilters();
@@ -164,6 +165,69 @@ namespace Etodpx.Test
             try { File.Delete(path); File.Delete(empty); } catch { }
         }
 
+        // --- onarim hedefleri
+        // "Tek tikla duzelt" bir alan adi icin strateji bulup onu hostlist'e
+        // koymazsa hicbir sey degismez: motor o ada dokunmaz. Roblox tam olarak
+        // boyle atlanmisti - ayarlayicinin varsayilan hedefinde vardi, dagitilan
+        // hosts.txt'de yoktu. Iki listenin ayrismasini burada yakaliyoruz.
+        private static void TestRepairTargets()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- onarim hedefleri");
+
+            string[] targets = NetworkRepair.RepairTargets;
+            Check(targets != null && targets.Length >= 2, "en az iki hedef olculuyor",
+                  targets == null ? "null" : "sayi " + targets.Length);
+            if (targets == null) return;
+
+            Check(Array.IndexOf(targets, "discord.com") >= 0, "Discord hedefler arasinda");
+            Check(Array.IndexOf(targets, "roblox.com") >= 0, "Roblox hedefler arasinda");
+
+            string[] required =
+            {
+                "discord.com", "discordapp.com", "cdn.discordapp.com",
+                "updates.discord.com", "gateway.discord.gg", "discord.gg", "status.discord.com",
+                "roblox.com", "www.roblox.com", "apis.roblox.com", "auth.roblox.com",
+                "assetgame.roblox.com", "gamejoin.roblox.com", "clientsettings.roblox.com"
+            };
+            var missing = new System.Collections.Generic.List<string>();
+            foreach (string t in required)
+                if (Array.IndexOf(targets, t) < 0) missing.Add(t);
+            Check(missing.Count == 0, "uygulamanin kullandigi tum uclar olculuyor",
+                  missing.Count == 0 ? null : "eksik: " + string.Join(",", missing.ToArray()));
+
+            bool allDns = true;
+            foreach (string t in targets)
+                if (Uri.CheckHostName(t) != UriHostNameType.Dns) allDns = false;
+            Check(allDns, "hedeflerin hepsi gecerli alan adi");
+
+            // Oz test bin\ icinden calisiyor; depo kopyasi bir ust dizinde.
+            // Yayin ZIP'inde ust dizin yok, o zaman bu kontrol atlanir.
+            string repoList = Path.Combine("..", "hosts.txt");
+            if (!File.Exists(repoList))
+            {
+                Console.WriteLine("  [atla] depo hosts.txt yok, kapsam kontrolu yapilmadi");
+                return;
+            }
+
+            Hostlist shipped = Hostlist.Load(repoList, null);
+            Check(shipped != null, "dagitilan hosts.txt okunabiliyor");
+            if (shipped == null) return;
+
+            missing.Clear();
+            foreach (string t in targets)
+                if (!Hits(shipped, t)) missing.Add(t);
+            Check(missing.Count == 0, "hosts.txt butun onarim hedeflerini kapsiyor",
+                  missing.Count == 0 ? null : "eksik: " + string.Join(",", missing.ToArray()));
+
+            // Olctuk: rbxcdn.com bu hatta engelli degil. Engelli olmayan bir CDN
+            // listeye girerse Roblox'ta avatarlar ve resimler yuklenmez.
+            Check(!Hits(shipped, "t0.rbxcdn.com"),
+                  "engelsiz Roblox CDN'i listeye alinmamis");
+
+            shipped.Dispose();
+        }
+
         // --- DNS geri alma
         // Geri alma yalnizca elle yazilmis sunuculari geri koymali. Tek ailesi elle
         // ayarli bir makinede eski kod digerini bizim Cloudflare adresimizde
@@ -249,18 +313,63 @@ namespace Etodpx.Test
 
             // Kurulum betigi de netsh'ten cikmali: netsh sozdizimi hatasinda
             // bile 0 donuyor, yani "kaydedildi" kontrolu hicbir zaman tutmadi.
-            string dohScript = NetworkRepair.BuildDohScript("'1.1.1.1','1.0.0.1'", 12);
+            Check(NetworkRepair.DohProviders.Length == 3,
+                  "Cloudflare, Google ve Quad9 sirayla hazir");
+            Check(NetworkRepair.DohProviders[0].Name == "Cloudflare" &&
+                  NetworkRepair.DohProviders[1].Name == "Google" &&
+                  NetworkRepair.DohProviders[2].Name == "Quad9",
+                  "sifreli DNS saglayici sirasi kararli");
+
+            string dohScript = NetworkRepair.BuildDohScript(
+                "'1.1.1.1','1.0.0.1'", 12,
+                "https://cloudflare-dns.com/dns-query",
+                new[] { "discord.com", "roblox.com" });
             Check(!dohScript.Contains("netsh"), "sifreli DNS kurulumu netsh kullanmiyor");
             Check(dohScript.Contains("Add-DnsClientDohServerAddress") &&
                   dohScript.Contains("Set-DnsClientDohServerAddress"),
                   "kayit yoksa ekleniyor, varsa guncelleniyor");
-            Check(dohScript.Contains("-AllowFallbackToUdp $true"),
-                  "DoH kurulamazsa duz UDP'ye dusuluyor - makine DNS'siz kalmiyor");
-            Check(dohScript.Contains("if(-not $v -or -not $v.AutoUpgrade)"),
-                  "ayar geri okunup dogrulaniyor");
-            Check(dohScript.Contains("Resolve-DnsName") && dohScript.Contains("cozumlemesi calismadi"),
-                  "ad cozumlemesi calisana kadar bekleniyor");
+            Check(dohScript.Contains("-AllowFallbackToUdp $false") &&
+                  !dohScript.Contains("-AllowFallbackToUdp $true"),
+                  "DoH duz ve zehirlenebilir UDP'ye dusmuyor");
+            Check(dohScript.Contains("$v.AllowFallbackToUdp"),
+                  "sifreleme ve UDP yasagi geri okunup dogrulaniyor");
+            Check(dohScript.Contains("Resolve-DnsName -Name $h") &&
+                  dohScript.Contains("'discord.com','roblox.com'") &&
+                  !dohScript.Contains("www.microsoft.com"),
+                  "genel site yerine gercek hedeflerin hepsi dogrulaniyor");
+            // Zehirlenme alan adi basina. Tek ada bakan bir dogrulama Discord
+            // acildi diye "DNS duzeldi" deyip Roblox'u bozuk birakiyordu.
+            Check(dohScript.Contains("foreach($h in @(") &&
+                  dohScript.Contains("if(-not $ok){throw ('Yeni DNS ayariyla cozumlenemedi: '+$h)}"),
+                  "hedeflerden biri cozulemezse DNS degisikligi basarili sayilmiyor");
+            Check(dohScript.Contains("195.175.254.2") && dohScript.Contains("0.0.0.0"),
+                  "bilinen DNS zehir adresleri basari sayilmiyor");
+            Check(dohScript.Contains("https://cloudflare-dns.com/dns-query"),
+                  "saglayiciya ait DoH sablonu kullaniliyor");
             Check(dohScript.Contains("-InterfaceIndex 12"), "sunucular dogru arayuze yaziliyor");
+
+            var managed = new DnsBackup { ManagedServers = new[] { "1.1.1.1", "1.0.0.1" } };
+            Check(NetworkRepair.CanReuseBackup(managed, new[] { "1.0.0.1", "1.1.1.1" }),
+                  "etodpx'in yonettigi DNS'te asil geri alma noktasi korunuyor");
+            Check(!NetworkRepair.CanReuseBackup(managed, new[] { "8.8.8.8", "8.8.4.4" }),
+                  "kullanicinin sonradan degistirdigi DNS eski yedekle ezilmiyor");
+            var legacyManaged = new DnsBackup();
+            Check(NetworkRepair.CanReuseBackup(legacyManaged, new[] { "1.1.1.1", "1.0.0.1" }),
+                  "v2.3 Cloudflare yedegi geriye uyumlu");
+            Check(!NetworkRepair.CanReuseBackup(legacyManaged, new[] { "8.8.8.8", "8.8.4.4" }),
+                  "eski yedek elle secilen Google DNS'i etodpx ayari sanmiyor");
+            Check(!NetworkRepair.CanReuseBackup(legacyManaged, new[] { "9.9.9.9", "149.112.112.112" }),
+                  "eski yedek elle secilen Quad9 DNS'i etodpx ayari sanmiyor");
+            Check(!NetworkRepair.CanReuseBackup(legacyManaged, new[] { "192.0.2.53" }),
+                  "ilgisiz eski yedek yeniden kullanilmiyor");
+
+            string[] mergedDoh = NetworkRepair.MergeDohEntries(
+                new[] { "1.1.1.1|0|0|https://old.example/dns-query" },
+                new[] { "1.1.1.1|1|0|https://cloudflare-dns.com/dns-query", "8.8.8.8|-" });
+            Check(mergedDoh.Length == 2,
+                  "v2.3 yedegine yeni saglayici kayitlari ekleniyor");
+            Check(mergedDoh[0].Contains("old.example") && mergedDoh[1] == "8.8.8.8|-",
+                  "eski geri alma degeri birlestirmede ezilmiyor");
         }
 
         private static void TestTunerDiagnostics()
@@ -280,6 +389,15 @@ namespace Etodpx.Test
                 "bilinen IPv6 engel sayfasi yakalaniyor");
             Check(!Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("1.1.1.1")),
                 "normal DNS adresi zehirli sayilmiyor");
+
+            Check(Tuner.RequiredTargetFailure(true, true, false, false) == "DNS_BLOCKED",
+                "zorunlu hedeflerden biri DNS'te gizliyse SNI taramasi baslamiyor");
+            Check(Tuner.RequiredTargetFailure(true, false, true, false) == "DNS_UNAVAILABLE",
+                "zorunlu hedeflerden biri cozulmuyorsa basari raporlanmiyor");
+            Check(Tuner.RequiredTargetFailure(true, false, false, true) == "IP_BLOCKED",
+                "zorunlu hedeflerden biri IP engelliyse digeri acik diye basarili sayilmiyor");
+            Check(Tuner.RequiredTargetFailure(false, true, true, true) == null,
+                "normal ayarlayici DPI ile asilabilen hedefleri ayiklamaya devam ediyor");
 
             // Tarama erken cikisi. Yanlis tarafa kayan bir esik calisan bir
             // stratejiyi eler, kullanici da bosuna "asilamiyor" cevabi alir.

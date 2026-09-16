@@ -30,6 +30,11 @@ namespace Etodpx.Ui
         private const string GlyphMinimize = "\uE921";
         private const string GlyphClose = "\uE8BB";
 
+        // Dugme metni iki yerde kuruluyor (ilk cizim ve durum tazeleme); ayni
+        // sabitten okunmazsa biri guncellenip digeri geride kaliyor.
+        // 12 px SemiBold'da 258 px cizer, dugmeye kalan yer 306 px - tek satir.
+        private const string RepairPrompt = "Discord / Roblox açılmıyor mu?  Tek tıkla düzelt";
+
         private readonly Config _cfg;
         private readonly DpiEngine _engine;
 
@@ -54,8 +59,19 @@ namespace Etodpx.Ui
         private string _lastErrorRaw;
         private bool _repairFailed;
         private string _lastRepairMessage;
+        private RepairFollowUp _repairFollowUp;
+        private string _lastRepairLogPath;
         private string _configWarning;
         private Process _tuneProcess;
+
+        private enum RepairFollowUp
+        {
+            None,
+            Retry,
+            NetworkSettings,
+            Report,
+            AppFolder
+        }
 
         private static SolidColorBrush New(Color c)
         {
@@ -315,7 +331,7 @@ namespace Etodpx.Ui
         {
             _repairText = new TextBlock
             {
-                Text = "Discord açılmıyor mu?  Tek tıkla düzelt",
+                Text = RepairPrompt,
                 Foreground = _text,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
@@ -432,11 +448,28 @@ namespace Etodpx.Ui
                 return;
             }
 
+            if (_repairFollowUp == RepairFollowUp.NetworkSettings)
+            {
+                OpenNetworkSettings();
+                return;
+            }
+            if (_repairFollowUp == RepairFollowUp.Report)
+            {
+                OpenRepairLog();
+                return;
+            }
+            if (_repairFollowUp == RepairFollowUp.AppFolder)
+            {
+                OpenAppFolder();
+                return;
+            }
+
             string tuner = System.IO.Path.Combine(Program.AppDir(), "etodpx-tune.exe");
             if (!File.Exists(tuner))
             {
                 _repairFailed = true;
                 _lastRepairMessage = "Otomatik düzeltme dosyası eksik · ZIP'in tamamını yeniden çıkar";
+                _repairFollowUp = RepairFollowUp.AppFolder;
                 ApplyState();
                 MessageBox.Show(this,
                     "Otomatik ayar dosyası eksik. ZIP'i yeniden indirip klasörün " +
@@ -446,7 +479,8 @@ namespace Etodpx.Ui
             }
 
             var answer = MessageBox.Show(this,
-                "Discord bağlantısını adım adım kontrol edip güvenle düzeltebildiğim " +
+                "Discord ve Roblox bağlantısını adım adım kontrol edip güvenle " +
+                "düzeltebildiğim " +
                 "sorunları uygulayacağım.\n\n" +
                 "Gerekirse aktif internet bağlantısına şifreli DNS kurulur; eski DNS " +
                 "ayarı önce yedeklenir ve doğrulama başarısız olursa geri alınır.\n\n" +
@@ -459,11 +493,13 @@ namespace Etodpx.Ui
             SetLastError(null);
             _repairFailed = false;
             _lastRepairMessage = null;
+            _repairFollowUp = RepairFollowUp.None;
+            _lastRepairLogPath = null;
             _power.SetBusy(true);
             SetRepairBusy(true, "Bağlantı ayarlanıyor…");
             _title.Foreground = _text;
             _title.Text = "AYARLANIYOR";
-            _subtitle.Text = "Discord için uygun bağlantı ayarı aranıyor";
+            _subtitle.Text = "Discord ve Roblox için uygun ayar aranıyor";
             _footer.Foreground = _sub;
             _footer.Text = "Bu işlem birkaç dakika sürebilir · pencereyi kapatma";
 
@@ -479,6 +515,9 @@ namespace Etodpx.Ui
             bool keepDns = false;
             string repairError = null;
             string engineError = null;
+            string dnsRepairError = null;
+            string dnsProvider = null;
+            var dnsTrace = new System.Text.StringBuilder();
             List<string> closedCopies = null;
 
             try
@@ -494,29 +533,65 @@ namespace Etodpx.Ui
 
                 if (IsDnsProblem(run.Code))
                 {
-                    RepairProgress("3/4 · Şifreli DNS güvenle hazırlanıyor", "Eski DNS ayarı geri alma noktası olarak saklanıyor");
                     string dnsError;
                     dnsBackup = NetworkRepair.CaptureActiveDns(out dnsError);
                     if (dnsBackup == null)
-                        throw new InvalidOperationException("Aktif ağ bağlantısının DNS ayarı yedeklenemedi: " + dnsError);
+                    {
+                        dnsRepairError = "Aktif bağlantının DNS ayarı güvenle yedeklenemedi: " + dnsError;
+                    }
+                    else
+                    {
+                        // Komut son adimda patlasa bile DNS'e dokunmus olabilir;
+                        // finally her durumda ilk ayara donebilsin.
+                        dnsMayHaveChanged = true;
+                        var failures = new List<string>();
 
-                    // Komut son adimda patlasa bile DNS'e dokunmus olabilir; bayrak
-                    // once kalkiyor ki finally mutlaka geri alsin.
-                    dnsMayHaveChanged = true;
-                    if (!NetworkRepair.ConfigureCloudflareDoh(dnsBackup, out dnsError))
-                        throw new InvalidOperationException("Şifreli DNS kurulamadı: " + dnsError);
+                        foreach (DnsProvider provider in NetworkRepair.DohProviders)
+                        {
+                            RepairProgress("3/4 · " + provider.Name + " şifreli DNS deneniyor",
+                                           "Başarısız olursa sıradaki güvenli sağlayıcı denenecek");
 
-                    Thread.Sleep(1200);
-                    RepairProgress("4/4 · Bağlantı yeniden doğrulanıyor", "DNS düzeldiyse uygun DPI ayarı otomatik bulunacak");
-                    run = ExecuteTuner(tuner);
-                    MergeCopies(run, closedCopies);
-                    if (IsDnsProblem(run.Code))
-                        throw new InvalidOperationException(
-                            "Şifreli DNS bu ağda doğrulanamadı. Eski DNS ayarı geri yüklenecek.");
+                            if (!NetworkRepair.ConfigureDoh(dnsBackup, provider,
+                                                            NetworkRepair.RepairTargets, out dnsError))
+                            {
+                                failures.Add(provider.Name + ": " + dnsError);
+                                dnsTrace.AppendLine(provider.Name + " kurulum hatası: " + dnsError);
+                            }
+                            else
+                            {
+                                Thread.Sleep(500);
+                                RepairProgress("4/4 · Discord ve Roblox bağlantısı doğrulanıyor",
+                                               provider.Name + " üzerinden gerçek hedefler sınanıyor");
+                                run = ExecuteTuner(tuner);
+                                MergeCopies(run, closedCopies);
+                                dnsTrace.AppendLine("=== " + provider.Name + " sonrası tanı ===");
+                                dnsTrace.AppendLine(run.Output);
 
-                    // Ikinci tani DNS asamasini gecti; sonuc IP engeli bile olsa
-                    // DNS artik dogru calisiyor demektir, yeni ayar kalsin.
-                    keepDns = true;
+                                if (!IsDnsProblem(run.Code))
+                                {
+                                    keepDns = true;
+                                    dnsProvider = provider.Name;
+                                    NetworkRepair.MarkManagedDns(dnsBackup, provider);
+                                    break;
+                                }
+
+                                failures.Add(provider.Name + ": hedefler hâlâ çözümlenemedi (" + run.Code + ")");
+                            }
+
+                            // Sonraki saglayiciyi tamamen temiz bir baslangictan dene.
+                            string restoreError;
+                            if (!NetworkRepair.RestoreForRetry(dnsBackup, out restoreError))
+                            {
+                                repairError = "DNS denemesi geri alınamadı: " + restoreError;
+                                break;
+                            }
+                        }
+
+                        if (!keepDns && repairError == null)
+                            dnsRepairError = failures.Count == 0
+                                ? "Bu Windows sürümü güvenli DNS onarımını desteklemiyor."
+                                : string.Join(" | ", failures.ToArray());
+                    }
                 }
 
                 if (run != null && run.Code == "CONFIG_WRITTEN") ReloadConfig();
@@ -545,7 +620,8 @@ namespace Etodpx.Ui
                 catch (Exception ex) { engineError = ex.Message; }
             }
 
-            string logPath = SaveRepairLog(run, firstRun, repairError, engineError, keepDns);
+            string logPath = SaveRepairLog(run, firstRun, repairError, engineError, keepDns,
+                                           dnsProvider, dnsRepairError, dnsTrace.ToString());
 
             if (_closing) return;
             try
@@ -571,6 +647,8 @@ namespace Etodpx.Ui
                     {
                         _repairFailed = true;
                         _lastRepairMessage = "Otomatik düzeltme tamamlanamadı · tekrar deneyebilirsin";
+                        _repairFollowUp = RepairFollowUp.Retry;
+                        _lastRepairLogPath = logPath;
                         ApplyState();
                         string detail = repairError;
                         if (logPath != null) detail += "\n\nTanı raporu:\n" + logPath;
@@ -581,8 +659,10 @@ namespace Etodpx.Ui
 
                     _repairFailed = false;
                     _lastRepairMessage = null;
+                    _repairFollowUp = RepairFollowUp.None;
+                    _lastRepairLogPath = logPath;
                     ApplyState();
-                    ShowTuneResult(run, keepDns, logPath);
+                    ShowTuneResult(run, keepDns, logPath, dnsProvider);
                 }));
             }
             catch (InvalidOperationException) { }
@@ -608,7 +688,10 @@ namespace Etodpx.Ui
                 p.StartInfo = new ProcessStartInfo
                 {
                     FileName = tuner,
-                    Arguments = "--auto --no-manage-app discord.com",
+                    // Hedefler on teshiste eleniyor: yalnizca SNI engelli olanlar
+                    // taramaya giriyor, biri aciksa tarama suresi uzamiyor.
+                    Arguments = "--auto --no-manage-app --require-all-targets " +
+                                string.Join(" ", NetworkRepair.RepairTargets),
                     WorkingDirectory = Program.AppDir(),
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -753,7 +836,8 @@ namespace Etodpx.Ui
         }
 
         private static string SaveRepairLog(TunerRun run, TunerRun firstRun, string repairError,
-                                            string engineError, bool dnsChanged)
+                                            string engineError, bool dnsChanged, string dnsProvider,
+                                            string dnsRepairError, string dnsTrace)
         {
             try
             {
@@ -765,6 +849,9 @@ namespace Etodpx.Ui
                     sb.AppendLine("first_result=" + firstRun.Code);
                 sb.AppendLine("exit_code=" + (run == null ? -1 : run.ExitCode));
                 sb.AppendLine("encrypted_dns_changed=" + dnsChanged);
+                if (dnsProvider != null) sb.AppendLine("encrypted_dns_provider=" + dnsProvider);
+                if (dnsRepairError != null)
+                    sb.AppendLine("dns_repair_error=" + OneLine(dnsRepairError));
                 if (repairError != null) sb.AppendLine("repair_error=" + repairError);
                 if (engineError != null) sb.AppendLine("engine_error=" + engineError);
                 sb.AppendLine();
@@ -777,25 +864,32 @@ namespace Etodpx.Ui
                     sb.AppendLine("=== 2. tani (sifreli DNS kurulduktan sonra) ===");
                 }
                 if (run != null) sb.Append(run.Output);
+                if (!string.IsNullOrEmpty(dnsTrace))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("=== şifreli DNS sağlayıcı denemeleri ===");
+                    sb.Append(dnsTrace);
+                }
                 File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
                 return path;
             }
             catch { return null; }
         }
 
-        private void ShowTuneResult(TunerRun run, bool dnsChanged, string logPath)
+        private void ShowTuneResult(TunerRun run, bool dnsChanged, string logPath,
+                                    string dnsProvider)
         {
             string code = run == null ? "FAILED" : run.Code;
             string copyNote = OtherCopyNote(run);
 
             if (code == "CONFIG_WRITTEN")
             {
-                _subtitle.Text = "Discord için ayarlandı · şimdi tekrar dene";
+                _subtitle.Text = "Discord ve Roblox için ayarlandı · şimdi dene";
                 string dns = dnsChanged
-                    ? "Şifreli DNS kuruldu, bağlantı ayarı bulundu ve koruma yeniden açıldı."
+                    ? (dnsProvider + " şifreli DNS kuruldu, bağlantı ayarı bulundu ve koruma yeniden açıldı.")
                     : "Bağlantı ayarı bulundu ve koruma yeniden açıldı.";
                 MessageBox.Show(this,
-                    dns + "\n\nŞimdi Discord'u tekrar deneyebilirsin." + copyNote,
+                    dns + "\n\nŞimdi Discord'u ve Roblox'u tekrar deneyebilirsin." + copyNote,
                     "etodpx - hazır", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -803,8 +897,8 @@ namespace Etodpx.Ui
             if (code == "ALREADY_OPEN" || code == "OK")
             {
                 string text = dnsChanged
-                    ? "DNS sorunu düzeltildi. Discord artık bu bağlantıda doğrudan açılabiliyor görünüyor."
-                    : "Discord bu bağlantıda doğrudan açılabiliyor görünüyor.";
+                    ? (dnsProvider + " şifreli DNS ile sorun düzeltildi. Discord ve Roblox artık bu bağlantıda doğrudan açılabiliyor görünüyor.")
+                    : "Discord ve Roblox bu bağlantıda doğrudan açılabiliyor görünüyor.";
                 MessageBox.Show(this,
                     text + " Koruma yeniden açıldı." + copyNote,
                     "etodpx - bağlantı açık", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -814,19 +908,25 @@ namespace Etodpx.Ui
             if (IsDnsProblem(code))
             {
                 _repairFailed = true;
-                _lastRepairMessage = "DNS otomatik düzeltilemedi · tekrar deneyebilir veya ağ ayarını açabilirsin";
+                _repairFollowUp = RepairFollowUp.NetworkSettings;
+                _lastRepairLogPath = logPath;
+                _lastRepairMessage = "DNS otomatik düzeltilemedi · ağ ayarlarını açabilirsin";
                 ApplyState();
-                var open = MessageBox.Show(this,
-                    "DNS sorunu bu ağda otomatik düzeltilemedi. Eski DNS ayarı korundu.\n\n" +
-                    "Windows ağ ayarlarını şimdi açayım mı?" + LogNote(logPath),
-                    "etodpx - DNS ayarı gerekiyor", MessageBoxButton.YesNo, MessageBoxImage.Information);
-                if (open == MessageBoxResult.Yes) OpenNetworkSettings();
+                MessageBox.Show(this,
+                    "Güvenli DNS seçenekleri bu bilgisayarda tamamlanamadı. " +
+                    "Eski DNS ayarın korundu ve koruma yeniden açıldı.\n\n" +
+                    "Aynı testi tekrarlamak yerine alttaki “Ağ ayarlarını aç” düğmesini kullanabilirsin. " +
+                    "Cloudflare, Google ve Quad9 bağlantılarının üçü de engelleniyorsa bu ağda VPN gerekebilir." +
+                    LogNote(logPath),
+                    "etodpx - bu ağda DNS aşılamadı", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             if (code == "IP_BLOCKED" || code == "NO_STRATEGY" || code == "NO_SNI")
             {
                 _repairFailed = true;
+                _repairFollowUp = RepairFollowUp.Report;
+                _lastRepairLogPath = logPath;
                 _lastRepairMessage = "Bağlantı ölçüldü ancak çalışan DPI ayarı bulunamadı";
                 ApplyState();
                 MessageBox.Show(this,
@@ -837,6 +937,8 @@ namespace Etodpx.Ui
             }
 
             _repairFailed = true;
+            _repairFollowUp = RepairFollowUp.Retry;
+            _lastRepairLogPath = logPath;
             _lastRepairMessage = "Otomatik tanı tamamlanamadı · yeniden deneyebilirsin";
             ApplyState();
             MessageBox.Show(this,
@@ -869,11 +971,46 @@ namespace Etodpx.Ui
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = "ms-settings:network-advancedsettings",
+                    FileName = "ms-settings:network",
                     UseShellExecute = true
                 });
             }
+            catch
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "control.exe",
+                        Arguments = "/name Microsoft.NetworkAndSharingCenter",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            }
+        }
+
+        private void OpenRepairLog()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_lastRepairLogPath) && File.Exists(_lastRepairLogPath))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = _lastRepairLogPath,
+                        UseShellExecute = true
+                    });
+                    return;
+                }
+            }
             catch { }
+            OpenAppFolder();
+        }
+
+        private static string OneLine(string value)
+        {
+            return (value ?? string.Empty).Replace("\r", " ").Replace("\n", " ").Trim();
         }
 
         private void SetRepairBusy(bool busy, string busyText = null)
@@ -895,9 +1032,16 @@ namespace Etodpx.Ui
 
             if (_lastError == null)
             {
-                _repairText.Text = _repairFailed
-                    ? "Tekrar tanıla ve düzelt"
-                    : "Discord açılmıyor mu?  Tek tıkla düzelt";
+                if (_repairFollowUp == RepairFollowUp.NetworkSettings)
+                    _repairText.Text = "Ağ ayarlarını aç";
+                else if (_repairFollowUp == RepairFollowUp.Report)
+                    _repairText.Text = "Tanı raporunu aç";
+                else if (_repairFollowUp == RepairFollowUp.AppFolder)
+                    _repairText.Text = "Paket klasörünü aç";
+                else if (_repairFollowUp == RepairFollowUp.Retry)
+                    _repairText.Text = "Tanıyı yeniden dene";
+                else
+                    _repairText.Text = RepairPrompt;
                 _repairText.Foreground = _repairFailed ? _danger : _text;
                 _repairButton.BorderBrush = _repairFailed ? _danger : _borderB;
                 return;
@@ -1165,10 +1309,19 @@ namespace Etodpx.Ui
 
             if (on)
             {
-                _title.Text = "KORUMA AÇIK";
-                _subtitle.Text = UsesFakePacket()
-                    ? "Bu bilgisayara uygun bağlantı ayarı etkin"
-                    : "Güvenli başlangıç ayarı etkin";
+                if (_repairFailed)
+                {
+                    _title.Text = "KORUMA SINIRLI";
+                    _subtitle.Text = "Koruma çalışıyor · bağlantı doğrulanamadı";
+                    _footer.Foreground = _danger;
+                }
+                else
+                {
+                    _title.Text = "KORUMA AÇIK";
+                    _subtitle.Text = UsesFakePacket()
+                        ? "Bu bilgisayara uygun bağlantı ayarı etkin"
+                        : "Güvenli başlangıç ayarı etkin";
+                }
                 _footer.Text = FooterInfo();
             }
             else

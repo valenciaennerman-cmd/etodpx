@@ -30,17 +30,80 @@ namespace Etodpx
         // "sunucu|autoupgrade|udpfallback|sablon" ya da kayit yoksa "sunucu|-".
         // null = eski bicimli yedek; o dosyalarda bu bilgi yok.
         public string[] DohBefore;
+        // Son basarili onarimda etodpx'in bu adaptore yazdigi sunucular.
+        // Boylece kullanici daha sonra DNS'i elle degistirirse eski bir yedegi
+        // geri yukleyip onun yeni ayarini ezmiyoruz.
+        public string[] ManagedServers;
+    }
+
+    internal sealed class DnsProvider
+    {
+        public string Name;
+        public string Template;
+        public string[] Ipv4;
+        public string[] Ipv6;
+
+        public string[] Servers(bool includeIpv6)
+        {
+            var values = new List<string>();
+            if (Ipv4 != null) values.AddRange(Ipv4);
+            if (includeIpv6 && Ipv6 != null) values.AddRange(Ipv6);
+            return values.ToArray();
+        }
     }
 
     internal static class NetworkRepair
     {
         private const int CommandTimeoutMs = 20000;
 
-        // Sifreli DNS icin kullandigimiz sunucular. Ayni liste hem kurulumda
-        // hem de geri almada gecerli olmali, yoksa temizlenmeyen kayit kalir.
-        private const string DohTargets =
-            "'1.1.1.1','1.0.0.1','2606:4700:4700::1111','2606:4700:4700::1001'";
-        private const string DohTemplate = "https://cloudflare-dns.com/dns-query";
+        // "Tek tikla duzelt" akisinin olctugu hedefler. Hem strateji bulucuya
+        // hem DNS dogrulamasina ayni liste gidiyor; ikisi ayrisirsa DNS'i
+        // Bir ana ada gore onaylayip uygulamanin API/CDN ucunu bozuk birakmak
+        // mumkun olurdu. Ayni hizmetin farkli sunucu havuzlari DPI kutusundan
+        // ayni cevabi vermeyebiliyor; kazanan ayar gercek kullanim uclarinin
+        // hepsini gecmek zorunda.
+        internal static readonly string[] RepairTargets =
+        {
+            "discord.com", "discordapp.com", "cdn.discordapp.com",
+            "updates.discord.com", "gateway.discord.gg", "discord.gg", "status.discord.com",
+            "roblox.com", "www.roblox.com", "apis.roblox.com", "auth.roblox.com",
+            "assetgame.roblox.com", "gamejoin.roblox.com", "clientsettings.roblox.com"
+        };
+
+        // Tek saglayici bazi ISS'lerde engellenebiliyor. Sirayla uc bagimsiz
+        // Windows DoH saglayicisi deneniyor; her deneme gercek hedeflerle
+        // dogrulaniyor.
+        internal static readonly DnsProvider[] DohProviders =
+        {
+            new DnsProvider
+            {
+                Name = "Cloudflare",
+                Template = "https://cloudflare-dns.com/dns-query",
+                Ipv4 = new[] { "1.1.1.1", "1.0.0.1" },
+                Ipv6 = new[] { "2606:4700:4700::1111", "2606:4700:4700::1001" }
+            },
+            new DnsProvider
+            {
+                Name = "Google",
+                Template = "https://dns.google/dns-query",
+                Ipv4 = new[] { "8.8.8.8", "8.8.4.4" },
+                Ipv6 = new[] { "2001:4860:4860::8888", "2001:4860:4860::8844" }
+            },
+            new DnsProvider
+            {
+                Name = "Quad9",
+                Template = "https://dns.quad9.net/dns-query",
+                Ipv4 = new[] { "9.9.9.9", "149.112.112.112" },
+                Ipv6 = new[] { "2620:fe::fe", "2620:fe::9" }
+            }
+        };
+
+        // Ayni liste hem yedeklemede hem geri almada kullanilmali; aksi halde
+        // basarisiz bir saglayici denemesinden makine-geneli DoH kaydi kalir.
+        private const string AllDohTargets =
+            "'1.1.1.1','1.0.0.1','2606:4700:4700::1111','2606:4700:4700::1001'," +
+            "'8.8.8.8','8.8.4.4','2001:4860:4860::8888','2001:4860:4860::8844'," +
+            "'9.9.9.9','149.112.112.112','2620:fe::fe','2620:fe::9'";
 
         // Program.AppDir yerine dogrudan - boylece dosya WPF'siz derleniyor ve
         // oz test onu iceri alabiliyor.
@@ -64,7 +127,9 @@ namespace Etodpx
                 "   Metric=[int]$r.RouteMetric+[int]$i.InterfaceMetric;Hardware=[bool]$a.HardwareInterface}" +
                 " }" +
                 "};" +
-                "$best=$items|Sort-Object @{Expression={if($_.Hardware){0}else{1}}},Metric|Select-Object -First 1;" +
+                // Gercek varsayilan yol en dusuk toplam metriktir. Donanimi once
+                // secmek VPN/tunel acikken yanlis adaptore DNS yaziyordu.
+                "$best=$items|Sort-Object Metric,@{Expression={if($_.Hardware){0}else{1}}}|Select-Object -First 1;" +
                 "if(-not $best){throw 'Aktif internet baglantisi bulunamadi'};" +
                 "$adapter=Get-NetAdapter -InterfaceIndex $best.Index -ErrorAction Stop;" +
                 "$dns=@(Get-DnsClientServerAddress -InterfaceIndex $best.Index|" +
@@ -88,7 +153,7 @@ namespace Etodpx
                 // bunu birebir yerine koyuyor. Cmdlet eski Windows'ta yok.
                 "$doh=@();" +
                 "if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){" +
-                " foreach($s in @(" + DohTargets + ")){" +
+                " foreach($s in @(" + AllDohTargets + ")){" +
                 "  $e=Get-DnsClientDohServerAddress -ServerAddress $s -ErrorAction SilentlyContinue;" +
                 "  if($e){$doh+=($s+'|'+[int][bool]$e.AutoUpgrade+'|'+[int][bool]$e.AllowFallbackToUdp+'|'+$e.DohTemplate)}" +
                 "  else{$doh+=($s+'|-')}" +
@@ -126,9 +191,6 @@ namespace Etodpx
                     : serverText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
                 string path = Path.Combine(AppDir(), "etodpx-dns-backup-" + index + ".conf");
-                DnsBackup existing = LoadBackup(path);
-                if (existing != null) return existing;
-
                 var backup = new DnsBackup
                 {
                     InterfaceIndex = index,
@@ -141,6 +203,19 @@ namespace Etodpx
                     DohBefore = SplitLines(Decode(Marker(run.Output, "ETODPX_DOH_B64"))),
                     FilePath = path
                 };
+
+                DnsBackup existing = LoadBackup(path);
+                if (CanReuseBackup(existing, servers))
+                {
+                    // v2.3 yalniz Cloudflare kayitlarini yedekliyordu. Google ve
+                    // Quad9'un mevcut makine-geneli ayarlarini eklerken eski
+                    // Cloudflare tabanini kesinlikle ezme.
+                    existing.DohBefore = MergeDohEntries(existing.DohBefore, backup.DohBefore);
+                    if (existing.ManagedServers == null) existing.ManagedServers = servers;
+                    SaveBackup(existing);
+                    return existing;
+                }
+
                 SaveBackup(backup);
                 return backup;
             }
@@ -151,7 +226,8 @@ namespace Etodpx
             }
         }
 
-        public static bool ConfigureCloudflareDoh(DnsBackup backup, out string error)
+        public static bool ConfigureDoh(DnsBackup backup, DnsProvider provider,
+                                        string[] validationHosts, out string error)
         {
             error = null;
             if (backup == null)
@@ -159,15 +235,36 @@ namespace Etodpx
                 error = "DNS yedeği bulunamadı.";
                 return false;
             }
+            if (provider == null)
+            {
+                error = "Şifreli DNS sağlayıcısı bulunamadı.";
+                return false;
+            }
+            // Zehirlenme alan adi basina: ISS Discord'a dogru cevap verip
+            // Roblox'a engel sayfasi dondurebiliyor. Tek ada bakan bir dogrulama
+            // "DNS duzeldi" deyip digerini bozuk birakiyordu.
+            if (validationHosts == null || validationHosts.Length == 0)
+            {
+                error = "Doğrulama alan adı verilmedi.";
+                return false;
+            }
+            foreach (string host in validationHosts)
+            {
+                if (Uri.CheckHostName(host) != UriHostNameType.Dns)
+                {
+                    error = "Doğrulama alan adı geçersiz: " + host;
+                    return false;
+                }
+            }
 
             // Yalnizca IPv4'u duzeltmek yetmiyor: cift yiginli bir hatta Windows
             // once IPv6 cozumleyicisini soruyor, yani ISS'nin zehirli sunucusu
             // cevap vermeye devam ediyor. Global IPv6 varsa iki aileyi de yaziyoruz.
-            string servers = backup.HasGlobalV6
-                ? DohTargets
-                : "'1.1.1.1','1.0.0.1'";
+            string[] selected = provider.Servers(backup.HasGlobalV6);
+            string servers = PsArray(selected);
 
-            string script = BuildDohScript(servers, backup.InterfaceIndex);
+            string script = BuildDohScript(servers, backup.InterfaceIndex,
+                                           provider.Template, validationHosts);
 
             ProcessResult run = RunPowerShell(script);
             if (run.Success && Marker(run.Output, "ETODPX_DNS_CHANGED") == "1") return true;
@@ -185,43 +282,69 @@ namespace Etodpx
         //
         // Cmdlet gercek bir hata firlatiyor, ustelik sonucu geri okuyup
         // dogruluyoruz: sessizce hicbir sey yapmayan bir adim kalmasin.
-        internal static string BuildDohScript(string servers, int interfaceIndex)
+        internal static string BuildDohScript(string servers, int interfaceIndex,
+                                              string template, string[] validationHosts)
         {
             return
                 "$ErrorActionPreference='Stop';" +
                 "if(-not (Get-Command Set-DnsClientDohServerAddress -ErrorAction SilentlyContinue))" +
                 "{throw 'Bu Windows surumu sifreli DNS ayarini desteklemiyor'};" +
-                "$t='" + DohTemplate + "';" +
+                "$t=" + PsQuote(template) + ";" +
                 "function Set-Doh([string]$s){" +
                 " if(Get-DnsClientDohServerAddress -ServerAddress $s -ErrorAction SilentlyContinue){" +
                 "  Set-DnsClientDohServerAddress -ServerAddress $s -DohTemplate $t" +
-                "   -AutoUpgrade $true -AllowFallbackToUdp $true | Out-Null" +
+                "   -AutoUpgrade $true -AllowFallbackToUdp $false | Out-Null" +
                 " }else{" +
                 "  Add-DnsClientDohServerAddress -ServerAddress $s -DohTemplate $t" +
-                "   -AutoUpgrade $true -AllowFallbackToUdp $true | Out-Null" +
+                "   -AutoUpgrade $true -AllowFallbackToUdp $false | Out-Null" +
                 " };" +
                 // Geri okuyup dogrula; yoksa sessiz basarisizlik tekrarlanir.
                 " $v=Get-DnsClientDohServerAddress -ServerAddress $s -ErrorAction SilentlyContinue;" +
-                " if(-not $v -or -not $v.AutoUpgrade){throw ('Sifreli DNS etkinlestirilemedi: '+$s)}" +
+                " if(-not $v -or -not $v.AutoUpgrade -or $v.AllowFallbackToUdp)" +
+                "  {throw ('Sifreli DNS etkinlestirilemedi: '+$s)}" +
                 "};" +
                 "foreach($s in @(" + servers + ")){Set-Doh $s};" +
                 "Set-DnsClientServerAddress -InterfaceIndex " + interfaceIndex +
                 " -ServerAddresses @(" + servers + ");" +
                 "Clear-DnsClientCache;" +
-                // Sifreli baglanti kurulana kadar sorgular basarisiz olabiliyor.
-                // Sabit bekleme yerine ad cozumlemesinin gercekten calistigini
-                // bekliyoruz; olmazsa burada durup geri aliyoruz.
-                "$ok=$false;" +
-                "for($i=0;$i -lt 12;$i++){" +
-                " try{if(@(Resolve-DnsName -Name 'www.microsoft.com' -Type A -DnsOnly" +
-                "  -ErrorAction Stop).Count -gt 0){$ok=$true;break}}catch{}" +
-                " Start-Sleep -Milliseconds 800" +
+                // Genel bir alan adinin acilmasi yeterli degil: ISS yalnizca
+                // Discord'a NXDOMAIN verebilir. Dogrudan hedefleri ve bilinen
+                // zehirli adresleri denetliyoruz. Engel alan adi basina konuldugu
+                // icin HEPSI cozulmeden "DNS duzeldi" demiyoruz - biri hala
+                // zehirliyse o site icin hicbir sey degismemis olur.
+                "$bad=@('195.175.254.2','0.0.0.0');" +
+                "foreach($h in @(" + PsArray(validationHosts) + ")){" +
+                " $ok=$false;" +
+                " for($i=0;$i -lt 12;$i++){" +
+                "  try{$a=@(Resolve-DnsName -Name $h -Type A -DnsOnly" +
+                "   -ErrorAction Stop|Where-Object {$_.IPAddress -and $bad -notcontains $_.IPAddress});" +
+                "   if($a.Count -gt 0){$ok=$true;break}}catch{}" +
+                "  Start-Sleep -Milliseconds 800" +
+                " };" +
+                " if(-not $ok){throw ('Yeni DNS ayariyla cozumlenemedi: '+$h)}" +
                 "};" +
-                "if(-not $ok){throw 'Yeni DNS ayariyla ad cozumlemesi calismadi'};" +
                 "'ETODPX_DNS_CHANGED=1'";
         }
 
+        public static void MarkManagedDns(DnsBackup backup, DnsProvider provider)
+        {
+            if (backup == null || provider == null) return;
+            backup.ManagedServers = provider.Servers(backup.HasGlobalV6);
+            SaveBackup(backup);
+        }
+
         public static bool Restore(DnsBackup backup, out string error)
+        {
+            return RestoreCore(backup, true, out error);
+        }
+
+        // Saglayicilar arasinda gecis yaparken ilk geri alma noktasini silme.
+        public static bool RestoreForRetry(DnsBackup backup, out string error)
+        {
+            return RestoreCore(backup, false, out error);
+        }
+
+        private static bool RestoreCore(DnsBackup backup, bool deleteBackup, out string error)
         {
             error = null;
             if (backup == null)
@@ -254,7 +377,14 @@ namespace Etodpx
             ProcessResult run = RunPowerShell(
                 "$ErrorActionPreference='Stop';" + set +
                 "Clear-DnsClientCache;'ETODPX_DNS_RESTORED=1'");
-            if (run.Success && Marker(run.Output, "ETODPX_DNS_RESTORED") == "1") return true;
+            if (run.Success && Marker(run.Output, "ETODPX_DNS_RESTORED") == "1")
+            {
+                if (deleteBackup && !string.IsNullOrEmpty(backup.FilePath))
+                {
+                    try { File.Delete(backup.FilePath); } catch { }
+                }
+                return true;
+            }
             error = CleanError(run);
             return false;
         }
@@ -327,9 +457,72 @@ namespace Etodpx
                                StringSplitOptions.RemoveEmptyEntries);
         }
 
+        internal static bool CanReuseBackup(DnsBackup existing, string[] currentServers)
+        {
+            if (existing == null) return false;
+            if (existing.ManagedServers != null)
+                return SameServers(existing.ManagedServers, currentServers);
+
+            // v2.3 yedeklerinde managed_servers alani yoktu ve o surum yalnizca
+            // Cloudflare yazabiliyordu. Google/Quad9'u burada kabul etmek,
+            // kullanicinin sonradan elle sectigi DNS'i eski yedekle ezerdi.
+            DnsProvider legacyProvider = DohProviders[0];
+            return SameServers(legacyProvider.Servers(false), currentServers) ||
+                   SameServers(legacyProvider.Servers(true), currentServers);
+        }
+
+        internal static string[] MergeDohEntries(string[] original, string[] current)
+        {
+            if (original == null) return current;
+            if (current == null) return original;
+
+            var merged = new List<string>(original);
+            foreach (string candidate in current)
+            {
+                string server = DohEntryServer(candidate);
+                bool found = false;
+                foreach (string saved in original)
+                    if (string.Equals(DohEntryServer(saved), server,
+                                      StringComparison.OrdinalIgnoreCase))
+                    { found = true; break; }
+                if (!found) merged.Add(candidate);
+            }
+            return merged.ToArray();
+        }
+
+        private static string DohEntryServer(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            int bar = value.IndexOf('|');
+            return bar < 0 ? value : value.Substring(0, bar);
+        }
+
+        private static bool SameServers(string[] left, string[] right)
+        {
+            left = left ?? new string[0];
+            right = right ?? new string[0];
+            if (left.Length != right.Length) return false;
+            foreach (string a in left)
+            {
+                bool found = false;
+                foreach (string b in right)
+                    if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase))
+                    { found = true; break; }
+                if (!found) return false;
+            }
+            return true;
+        }
+
+        private static string PsArray(string[] values)
+        {
+            var quoted = new List<string>();
+            foreach (string value in values ?? new string[0]) quoted.Add(PsQuote(value));
+            return string.Join(",", quoted.ToArray());
+        }
+
         private static void SaveBackup(DnsBackup backup)
         {
-            var lines = new[]
+            var lines = new List<string>
             {
                 "# etodpx DNS geri alma noktasi",
                 "interface_index=" + backup.InterfaceIndex,
@@ -341,7 +534,9 @@ namespace Etodpx
                 "doh_before_b64=" + Encode(string.Join("\n", backup.DohBefore ?? new string[0])),
                 "servers_b64=" + Encode(string.Join("\n", backup.Servers ?? new string[0]))
             };
-            File.WriteAllLines(backup.FilePath, lines, new UTF8Encoding(false));
+            if (backup.ManagedServers != null)
+                lines.Add("managed_servers_b64=" + Encode(string.Join("\n", backup.ManagedServers)));
+            File.WriteAllLines(backup.FilePath, lines.ToArray(), new UTF8Encoding(false));
         }
 
         private static DnsBackup LoadBackup(string path)
@@ -353,7 +548,7 @@ namespace Etodpx
                 string alias = string.Empty, servers = string.Empty;
                 bool wasDhcp = false, hasV6 = false;
                 // null kalirlarsa dosya eski bicimlidir; RestoreServers buna gore davranir.
-                string[] static4 = null, static6 = null, dohBefore = null;
+                string[] static4 = null, static6 = null, dohBefore = null, managedServers = null;
                 foreach (string raw in File.ReadAllLines(path))
                 {
                     int eq = raw.IndexOf('=');
@@ -367,6 +562,8 @@ namespace Etodpx
                     else if (key == "static4_b64") static4 = SplitServers(Decode(value));
                     else if (key == "static6_b64") static6 = SplitServers(Decode(value));
                     else if (key == "doh_before_b64") dohBefore = SplitLines(Decode(value));
+                    else if (key == "managed_servers_b64")
+                        managedServers = SplitServers(Decode(value));
                     else if (key == "servers_b64") servers = Decode(value);
                 }
                 if (index <= 0) return null;
@@ -379,6 +576,7 @@ namespace Etodpx
                     Static4 = static4,
                     Static6 = static6,
                     DohBefore = dohBefore,
+                    ManagedServers = managedServers,
                     Servers = servers.Length == 0
                         ? new string[0]
                         : servers.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries),
