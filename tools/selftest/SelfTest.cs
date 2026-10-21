@@ -29,33 +29,46 @@ namespace Etodpx.Test
 
         private static void Check(bool ok, string what) { Check(ok, what, null); }
 
-        private static int Main()
+        private static void RunSection(string name, Action test, string filter)
+        {
+            if (!string.IsNullOrEmpty(filter) &&
+                name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0)
+                return;
+            test();
+        }
+
+        private static int Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
+            string filter = (args != null && args.Length > 0) ? args[0] : null;
             Console.WriteLine();
-            Console.WriteLine("etodpx oz test");
+            Console.WriteLine("etodpx oz test" + (filter == null ? string.Empty : " (filtre: " + filter + ")"));
             Console.WriteLine("==============");
 
-            TestInterop();
-            TestConfig();
-            TestConfigCopy();
-            TestHostlist();
-            TestRepairTargets();
-            TestDnsRestore();
-            TestTunerDiagnostics();
-            TestFilters();
-            TestFakeClientHello();
-            TestSniParser();
-            TestMidSld();
-            TestSplitPosModes();
-            TestHttpHost();
-            TestPacketParse();
-            TestQuicFake();
-            TestDesyncGuards();
-            TestIPv6();
-            TestQuicFalsePositives();
-            TestTcpFalsePositives();
-            TestHostCaseSafety();
+            RunSection("Interop", TestInterop, filter);
+            RunSection("Config", TestConfig, filter);
+            RunSection("ConfigCopy", TestConfigCopy, filter);
+            RunSection("Hostlist", TestHostlist, filter);
+            RunSection("HostlistRules", TestHostlistRules, filter);
+            RunSection("RepairTargets", TestRepairTargets, filter);
+            RunSection("DnsRestore", TestDnsRestore, filter);
+            RunSection("TunerDiagnostics", TestTunerDiagnostics, filter);
+            RunSection("StartupTask", TestStartupTask, filter);
+            RunSection("Filters", TestFilters, filter);
+            RunSection("FakeClientHello", TestFakeClientHello, filter);
+            RunSection("SniParser", TestSniParser, filter);
+            RunSection("MidSld", TestMidSld, filter);
+            RunSection("SplitPosModes", TestSplitPosModes, filter);
+            RunSection("HttpHost", TestHttpHost, filter);
+            RunSection("PacketParse", TestPacketParse, filter);
+            RunSection("QuicFake", TestQuicFake, filter);
+            RunSection("DesyncGuards", TestDesyncGuards, filter);
+            RunSection("ContinuationTable", TestContinuationTable, filter);
+            RunSection("SegmentedClientHello", TestSegmentedClientHello, filter);
+            RunSection("IPv6", TestIPv6, filter);
+            RunSection("QuicFalsePositives", TestQuicFalsePositives, filter);
+            RunSection("TcpFalsePositives", TestTcpFalsePositives, filter);
+            RunSection("HostCaseSafety", TestHostCaseSafety, filter);
 
             Console.WriteLine();
             Console.WriteLine("gecen: " + _pass + "   kalan: " + _fail);
@@ -163,6 +176,104 @@ namespace Etodpx.Test
                   "bos liste uyari uretip null donuyor");
 
             try { File.Delete(path); File.Delete(empty); } catch { }
+        }
+
+        // --- alan adi basina ozel strateji ve canli ekleme
+        private static void TestHostlistRules()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- alan adi basina strateji ve ekleme");
+
+            string path = Path.Combine(Path.GetTempPath(), "etodpx-hostrules-test.txt");
+            File.WriteAllLines(path, new[]
+            {
+                "discord.com",
+                "x.com fake+disorder ttl=6 midsld",
+                "old.site.org split badsum pos=2"
+            });
+
+            Hostlist list = Hostlist.Load(path, null);
+            Check(list != null && list.Count == 3, "ozel kuralli liste okundu");
+            if (list != null)
+            {
+                HostRule r1;
+                byte[] b1 = Encoding.ASCII.GetBytes("cdn.x.com");
+                bool m1;
+                fixed (byte* p = b1) m1 = list.MatchRule(p, b1.Length, out r1);
+                Check(m1 && r1.HasOverride, "x.com alt alan adinda ozel strateji yakalandi");
+                Check((r1.Flags & HostFlags.Fake) != 0 &&
+                      (r1.Flags & HostFlags.Disorder) != 0 &&
+                      (r1.Flags & HostFlags.Ttl) != 0 &&
+                      (r1.Flags & HostFlags.SplitMidSld) != 0 &&
+                      r1.TtlValue == 6,
+                      "x.com ozel bayraklari (fake+disorder, ttl=6, midsld) dogru",
+                      "ttl=" + r1.TtlValue + ", flags=" + (int)r1.Flags);
+
+                HostRule r2;
+                byte[] b2 = Encoding.ASCII.GetBytes("old.site.org");
+                bool m2;
+                fixed (byte* p = b2) m2 = list.MatchRule(p, b2.Length, out r2);
+                Check(m2 && r2.HasOverride && r2.FixedSplitPos == 2 &&
+                      (r2.Flags & HostFlags.BadSum) != 0,
+                      "sabit bolme konumu ve badsum bayragi okundu");
+
+                HostRule rDefault;
+                byte[] bDef = Encoding.ASCII.GetBytes("discord.com");
+                bool mDef;
+                fixed (byte* p = bDef) mDef = list.MatchRule(p, bDef.Length, out rDefault);
+                Check(mDef && !rDefault.HasOverride,
+                      "sade alan adinda genel ayar korunuyor");
+
+                list.Dispose();
+            }
+
+            string normalized;
+            string err;
+            bool added = Hostlist.AddHostToFile(path, "https://www.NewSite.com/test?a=1", out normalized, out err);
+            Check(added && err == null && normalized == "newsite.com",
+                  "AddHostToFile tam URL'den alan adini ayiklayip ekliyor",
+                  err ?? normalized);
+
+            bool dupSub = Hostlist.AddHostToFile(path, "sub.newsite.com", out normalized, out err);
+            Check(!dupSub && err == null, "ust alan adi zaten listedeyse alt alan adi tekrar yazilmiyor");
+            bool otherSite = Hostlist.AddHostToFile(path, "another.org", out normalized, out err);
+            Check(otherSite && err == null, "farkli alan adi eklenebiliyor");
+
+            // Canli liste degistirme (SetHostlist)
+            var cfg = new Config();
+            var st = new Stats();
+            using (var w = new DesyncWorker(cfg, st, IntPtr.Zero, 0))
+            using (var hNew = Hostlist.Load(path, null))
+            {
+                w.SetHostlist(hNew);
+                byte[] unrecognized = BuildTcpPacket(Fakes.BuildTlsClientHello("google.com"), Packet.TcpPsh);
+                Check(!Feed(w, unrecognized) && st.SendErrors == 0,
+                      "SetHostlist sonrasi listede olmayan alan adi es geciliyor");
+            }
+
+            try { File.Delete(path); } catch { }
+        }
+
+        // --- Windows baslangic gorevi
+        private static void TestStartupTask()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- Windows baslangic gorevi");
+
+            string createArgs = StartupTask.BuildCreateArguments(@"C:\Program Files\etodpx\etodpx.exe");
+            Check(createArgs.Contains("/Create") &&
+                  createArgs.Contains("/SC ONLOGON") &&
+                  createArgs.Contains("/RL HIGHEST") &&
+                  createArgs.Contains("etodpx.exe"),
+                  "schtasks olusturma komutu /SC ONLOGON ve /RL HIGHEST iceriyor", createArgs);
+
+            string delArgs = StartupTask.BuildDeleteArguments();
+            Check(delArgs.Contains("/Delete") && delArgs.Contains("/F"),
+                  "schtasks silme komutu dogru", delArgs);
+
+            string queryArgs = StartupTask.BuildQueryArguments();
+            Check(queryArgs.Contains("/Query") && queryArgs.Contains(StartupTask.TaskName),
+                  "schtasks sorgu komutu dogru", queryArgs);
         }
 
         // --- onarim hedefleri
@@ -348,6 +459,18 @@ namespace Etodpx.Test
                   "saglayiciya ait DoH sablonu kullaniliyor");
             Check(dohScript.Contains("-InterfaceIndex 12"), "sunucular dogru arayuze yaziliyor");
 
+            // Gecis halindeki bir agda ilk sorgu zaman asimina ugrayip ikincisi
+            // gecebilir; dogrulama ve islem zaman asimlari dar olmamali.
+            Check(dohScript.Contains("$deadline=(Get-Date).AddSeconds(" + NetworkRepair.DohValidationSeconds + ")") &&
+                  dohScript.Contains("Start-Sleep -Milliseconds 800") &&
+                  dohScript.Contains("$hasDoh="),
+                  "DoH dogrulamasi gecici hatalara karsi yeniden deneme penceresi ve Win10 uyumu kullaniyor");
+            Check(NetworkRepair.DohValidationSeconds >= 30 &&
+                  NetworkRepair.CommandTimeoutMs >= 45000 &&
+                  NetworkRepair.DohCommandTimeoutMs > NetworkRepair.DohValidationSeconds * 1000,
+                  "PowerShell zaman asimi dogrulama penceresinden genis",
+                  "pencere=" + NetworkRepair.DohValidationSeconds + "s, ps=" + NetworkRepair.DohCommandTimeoutMs + "ms");
+
             var managed = new DnsBackup { ManagedServers = new[] { "1.1.1.1", "1.0.0.1" } };
             Check(NetworkRepair.CanReuseBackup(managed, new[] { "1.0.0.1", "1.1.1.1" }),
                   "etodpx'in yonettigi DNS'te asil geri alma noktasi korunuyor");
@@ -362,6 +485,29 @@ namespace Etodpx.Test
                   "eski yedek elle secilen Quad9 DNS'i etodpx ayari sanmiyor");
             Check(!NetworkRepair.CanReuseBackup(legacyManaged, new[] { "192.0.2.53" }),
                   "ilgisiz eski yedek yeniden kullanilmiyor");
+
+            // Captive portal / dis DoH engelli ag tespiti: yalnizca hala bizim
+            // yonettigimiz ve aktif rotayi tasiyan adaptorde DNS tamamen durduysa
+            // eski ayara donulmeli; kullanici ayari degistirdiyse ya da hat kopuksa
+            // dokunulmamali.
+            string[] mServers = { "1.1.1.1", "1.0.0.1" };
+            Check(NetworkRepair.ClassifyProbe(new[] { "1.1.1.1", "1.0.0.1", "fe80::1" }, mServers, "DHCP_OK") ==
+                  NetworkRepair.ManagedDnsState.BlockedHere,
+                  "ag degisiminde kilitlenen yonettigimiz DoH yakalaniyor");
+            Check(NetworkRepair.ClassifyProbe(mServers, mServers, "SYSTEM_OK") ==
+                  NetworkRepair.ManagedDnsState.Healthy,
+                  "calisan yonettigimiz DoH koruma altinda kaliyor");
+            Check(NetworkRepair.ClassifyProbe(new[] { "8.8.8.8", "8.8.4.4" }, mServers, "DHCP_OK") ==
+                  NetworkRepair.ManagedDnsState.NotManaged,
+                  "kullanicinin sonradan degistirdigi DNS'e dokunulmuyor");
+            Check(NetworkRepair.ClassifyProbe(mServers, mServers, "DOWN") ==
+                  NetworkRepair.ManagedDnsState.NetworkDown,
+                  "aktif rotada olmayan ya da kopuk adaptorde DNS geri alinmiyor");
+            string probeScript = NetworkRepair.BuildManagedProbeScript(12);
+            Check(probeScript.Contains("-InterfaceIndex 12") &&
+                  probeScript.Contains("DhcpNameServer") &&
+                  probeScript.Contains("ETODPX_PROBE=DHCP_OK"),
+                  "ag degisimi yoklamasi yalnizca yonettigimiz sunuculari ve DHCP DNS'ini kontrol ediyor");
 
             string[] mergedDoh = NetworkRepair.MergeDohEntries(
                 new[] { "1.1.1.1|0|0|https://old.example/dns-query" },
@@ -383,12 +529,44 @@ namespace Etodpx.Test
                 "port hedef alan adindan ayriliyor");
             Check(Tuner.ToHostName("https://kullanici:parola@discord.com/login") == "discord.com",
                 "gercek kullanici bilgisi alan adindan ayriliyor");
+            Check(Tuner.ToHostName("[2606:4700::1]:443") == "2606:4700::1",
+                "koseli parantezli IPv6 + port dogru ayriliyor");
+            Check(Tuner.ToHostName("2606:4700::1") == "2606:4700::1",
+                "ciplak IPv6 port sanilip kesilmiyor");
+
             Check(Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("195.175.254.2")),
                 "bilinen IPv4 engel sayfasi yakalaniyor");
             Check(Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("2a01:358:4014:a00::3")),
                 "bilinen IPv6 engel sayfasi yakalaniyor");
             Check(!Tuner.IsKnownPoisonAddress(System.Net.IPAddress.Parse("1.1.1.1")),
                 "normal DNS adresi zehirli sayilmiyor");
+
+            // DNS zehir tespiti (JudgeDns + HasKnownPoison)
+            bool failed;
+            var cf = new System.Collections.Generic.List<string> { "162.159.135.232", "162.159.136.232" };
+            var gg = new System.Collections.Generic.List<string> { "162.159.136.232", "162.159.137.232" };
+            var empty = new System.Collections.Generic.List<string>();
+
+            Check(Tuner.JudgeDns(new System.Collections.Generic.List<string> { "195.175.254.2" }, cf, gg, out failed) && !failed,
+                "referanslar uzlasirken sistem farkli adres donerse zehirli");
+            Check(!Tuner.JudgeDns(new System.Collections.Generic.List<string> { "162.159.135.232" }, cf, gg, out failed) && !failed,
+                "sistem referanslardan biriyle ortak adres verirse temiz");
+            Check(!Tuner.JudgeDns(
+                    new System.Collections.Generic.List<string> { "104.18.1.1" },
+                    new System.Collections.Generic.List<string> { "104.18.2.2" },
+                    new System.Collections.Generic.List<string> { "104.18.3.3" }, out failed) && !failed,
+                "CDN her cozumleyiciye farkli adres donunce yanlis alarm verilmiyor");
+            Check(!Tuner.JudgeDns(new System.Collections.Generic.List<string> { "1.2.3.4" }, empty, gg, out failed) && failed,
+                "referans cozumleyiciye ulasilamayinca compareFailed kalkiyor");
+
+            Check(Tuner.HasKnownPoison(new[] { System.Net.IPAddress.Parse("195.175.254.2") }),
+                "bilinen engel sayfasi IPv4 yakalaniyor");
+            Check(Tuner.HasKnownPoison(new[] { System.Net.IPAddress.Parse("2a01:358:4014:a00::3") }),
+                "bilinen engel sayfasi IPv6 (buyuk-kucuk harf duyarsiz) yakalaniyor");
+            Check(Tuner.HasKnownPoison(new[] { System.Net.IPAddress.IPv6Any }),
+                "bosa dusurulmus :: adresi yakalaniyor");
+            Check(!Tuner.HasKnownPoison(new[] { System.Net.IPAddress.Parse("162.159.135.232") }),
+                "gercek sunucu adresi zehirli sayilmiyor");
 
             Check(Tuner.RequiredTargetFailure(true, true, false, false) == "DNS_BLOCKED",
                 "zorunlu hedeflerden biri DNS'te gizliyse SNI taramasi baslamiyor");
@@ -411,6 +589,18 @@ namespace Etodpx.Test
                 "temel puan sifirken hicbir strateji pesinen elenmiyor");
             Check(!Tuner.CannotWin(0, 0, -1),
                 "-1 esigi verildiginde hic vazgecilmiyor (temel olcum ve dogrulama)");
+
+            // Ayarlayiciya hosts.txt disinda bir hedef verildiginde tespit edilmeli.
+            string tmp = Path.Combine(Path.GetTempPath(), "etodpx-tune-hosts-test.txt");
+            File.WriteAllLines(tmp, new[] { "discord.com" });
+            try
+            {
+                string[] miss = Tuner.MissingHosts(tmp, new[] { "discord.com", "cdn.discord.com", "reddit.com" });
+                Check(miss.Length == 1 && miss[0] == "reddit.com",
+                    "hosts.txt'de olmayan olcum hedefi tespit ediliyor",
+                    "gelen: " + string.Join(",", miss));
+            }
+            finally { try { File.Delete(tmp); } catch { } }
         }
 
         // --- interop
@@ -461,6 +651,183 @@ namespace Etodpx.Test
                 Check(st.SendErrors == 0, "bu durumlarda hic gonderim denenmedi",
                       "gonderim hatasi: " + st.SendErrors);
             }
+        }
+
+        // --- parcali ClientHello devam tablosu
+        // Hibrit kuantum-sonrasi anahtar degisimi (X25519MLKEM768) ClientHello'yu
+        // ~1800 bayta cikardi. LSO olmayan adaptorde (Wi-Fi) bu iki TCP segmentine
+        // bolunuyor ve SNI bazen ikinci segmente kaliyor.
+        private static void TestContinuationTable()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- parcali ClientHello devam tablosu");
+
+            using (var ct = new ContinuationTable())
+            {
+                byte[] s1 = BuildTcpSegment(1000, new byte[] { 1, 2, 3, 4 });
+                byte[] s2 = BuildTcpSegment(1004, new byte[] { 5, 6, 7 });
+                byte[] sWrongSeq = BuildTcpSegment(2000, new byte[] { 9, 9 });
+                var outBuf = new byte[16];
+
+                fixed (byte* p1 = s1)
+                fixed (byte* p2 = s2)
+                fixed (byte* pw = sWrongSeq)
+                fixed (byte* dst = outBuf)
+                {
+                    PacketView v1;
+                    Packet.Parse(p1, s1.Length, out v1);
+
+                    // Yanlis sira numarali segment eslesmemeli.
+                    ct.Record(pw, sWrongSeq.Length);
+                    Check(ct.CopyNext(p1, ref v1, dst, outBuf.Length, 0) == 0,
+                          "farkli seq tasiyan segment eslesmiyor");
+
+                    // Beklenen sira numarasi (1000 + 4 = 1004) kaydedildiginde bulunmali.
+                    ct.Record(p2, s2.Length);
+                    int n = ct.CopyNext(p1, ref v1, dst, outBuf.Length, 0);
+                    Check(n == 3, "beklenen sira numarali ikinci segment kopyalandi", "gelen " + n);
+                    Check(outBuf[0] == 5 && outBuf[1] == 6 && outBuf[2] == 7,
+                          "kopyalanan devam baytlari dogru");
+                }
+            }
+        }
+
+        // --- iki segmente bolunmus buyuk ClientHello
+        private static void TestSegmentedClientHello()
+        {
+            Console.WriteLine();
+            Console.WriteLine("- iki segmente bolunmus ClientHello (hibrit PQ boyutu)");
+
+            // SNI'si ~1450. bayttan sonra gelen ~1800 baytlik gecerli bir ClientHello
+            // kur: ilk 1400 baytlik segmentte SNI YOK, ikinci segmentte var.
+            byte[] full = BuildLargeClientHello("discord.com", 1420);
+            const int seg1Len = 1400;
+            var seg1Payload = new byte[seg1Len];
+            var seg2Payload = new byte[full.Length - seg1Len];
+            Buffer.BlockCopy(full, 0, seg1Payload, 0, seg1Len);
+            Buffer.BlockCopy(full, seg1Len, seg2Payload, 0, seg2Payload.Length);
+
+            fixed (byte* pf = full)
+            fixed (byte* p1 = seg1Payload)
+            {
+                Check(Hostname.FindSni(pf, full.Length).Found,
+                      "tam ClientHello'da SNI bulunuyor");
+                Check(!Hostname.FindSni(p1, seg1Len).Found,
+                      "ilk segmentte SNI henuz yok (ikinci segmentte)");
+                Check(DesyncWorker.NeedsContinuation(p1, seg1Len),
+                      "NeedsContinuation eksik uzantili ilk segmenti taniyor");
+                Check(!DesyncWorker.NeedsContinuation(pf, full.Length),
+                      "NeedsContinuation tam pakette gereksiz yere tetiklenmiyor");
+            }
+
+            // Birlestirilmis paketten bulunan bolme noktasi ikinci segmente
+            // dusuyorsa ilk segmentin sinirina cekilmeli.
+            Check(DesyncWorker.FitSplitToSegment(1450, 1400, true, 0) == 3,
+                  "ikinci segmente dusen bolme noktasi ilk segmentte guvenli konuma cekiliyor");
+            Check(DesyncWorker.FitSplitToSegment(200, 1400, true, 0) == 200,
+                  "ilk segmentin icindeki bolme noktasi korunuyor");
+            Check(DesyncWorker.FitSplitToSegment(1450, 1400, true, 1450) == -1,
+                  "ilk segment disina tasan sabit bolme konumu iptal ediliyor");
+
+            // Canli akis: isci ilk segmenti alinca sniffer'in yakaladigi ikinci
+            // segmentle birlestirip hosts.txt eslesmesini yapabilmeli.
+            string path = Path.Combine(Path.GetTempPath(), "etodpx-seg-hosts.txt");
+            File.WriteAllLines(path, new[] { "discord.com" });
+            Hostlist hosts = Hostlist.Load(path, null);
+            try
+            {
+                using (var ct = new ContinuationTable())
+                {
+                    byte[] pkt1 = BuildTcpSegment(5000, seg1Payload);
+                    byte[] pkt2 = BuildTcpSegment((uint)(5000 + seg1Len), seg2Payload);
+
+                    // 1) Devam tablosu YOKKEN: ilk segmentte SNI yok -> eslesmez -> gonderim denenmez.
+                    var cfg = new Config();
+                    var stNoCont = new Stats();
+                    using (var w = new DesyncWorker(cfg, stNoCont, IntPtr.Zero, 0, hosts, null))
+                    {
+                        Feed(w, pkt1);
+                        Check(stNoCont.SendErrors == 0,
+                              "devam tablosu yokken SNI'si 2. segmentte kalan paket kaciriliyor (eski davranis)");
+                    }
+
+                    // 2) Devam tablosu VARKEN: 2. segment tabloya girince SNI bulunur -> islenir.
+                    var stWithCont = new Stats();
+                    using (var w = new DesyncWorker(cfg, stWithCont, IntPtr.Zero, 0, hosts, ct))
+                    {
+                        // Ikinci segmenti 5 ms sonra sniffer yakalamis gibi enjekte et.
+                        System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                        {
+                            System.Threading.Thread.Sleep(5);
+                            fixed (byte* p2 = pkt2)
+                            {
+                                ct.Record(p2, pkt2.Length);
+                            }
+                        });
+
+                        Feed(w, pkt1);
+                        Check(stWithCont.SendErrors > 0,
+                              "devam tablosu ile 2. segmentteki SNI bulunup desync uygulandi");
+                    }
+                }
+            }
+            finally
+            {
+                if (hosts != null) hosts.Dispose();
+                try { File.Delete(path); } catch { }
+            }
+        }
+
+        private static byte[] BuildTcpSegment(uint seq, byte[] payload)
+        {
+            byte[] pkt = BuildTcpPacket(payload, Packet.TcpPsh);
+            pkt[24] = (byte)(seq >> 24);
+            pkt[25] = (byte)(seq >> 16);
+            pkt[26] = (byte)(seq >> 8);
+            pkt[27] = (byte)seq;
+            return pkt;
+        }
+
+        // SNI uzantisindan once paddingByteCount baytlik sahte bir uzanti (0x0015 padding)
+        // koyarak toplam boyutu >1500 bayta cikarir.
+        private static byte[] BuildLargeClientHello(string sni, int paddingByteCount)
+        {
+            byte[] host = Encoding.ASCII.GetBytes(sni);
+            int sniExtLen = 4 + 2 + 1 + 2 + host.Length;
+            int padExtLen = 4 + paddingByteCount;
+            int extTotal = padExtLen + sniExtLen;
+            int bodyLen = 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + extTotal;
+            int recLen = 4 + bodyLen;
+
+            var b = new byte[5 + recLen];
+            int p = 0;
+            b[p++] = 0x16; b[p++] = 0x03; b[p++] = 0x01;
+            b[p++] = (byte)(recLen >> 8); b[p++] = (byte)recLen;
+            b[p++] = 0x01;
+            b[p++] = (byte)(bodyLen >> 16); b[p++] = (byte)(bodyLen >> 8); b[p++] = (byte)bodyLen;
+            b[p++] = 0x03; b[p++] = 0x03;
+            p += 32;                                     // random
+            b[p++] = 0x00;                               // session id len
+            b[p++] = 0x00; b[p++] = 0x02;                // cipher suites len
+            b[p++] = 0x13; b[p++] = 0x01;
+            b[p++] = 0x01; b[p++] = 0x00;                // compression
+            b[p++] = (byte)(extTotal >> 8); b[p++] = (byte)extTotal;
+
+            // Padding uzantisi (tip 0x0015) - X25519MLKEM768 key_share yerini simule eder.
+            b[p++] = 0x00; b[p++] = 0x15;
+            b[p++] = (byte)(paddingByteCount >> 8); b[p++] = (byte)paddingByteCount;
+            p += paddingByteCount;
+
+            // SNI uzantisi (tip 0x0000)
+            int listLen = 1 + 2 + host.Length;
+            int extDataLen = 2 + listLen;
+            b[p++] = 0x00; b[p++] = 0x00;
+            b[p++] = (byte)(extDataLen >> 8); b[p++] = (byte)extDataLen;
+            b[p++] = (byte)(listLen >> 8); b[p++] = (byte)listLen;
+            b[p++] = 0x00;
+            b[p++] = (byte)(host.Length >> 8); b[p++] = (byte)host.Length;
+            Buffer.BlockCopy(host, 0, b, p, host.Length);
+            return b;
         }
 
         // --- Host: yeniden yazma guvenligi
@@ -773,6 +1140,7 @@ namespace Etodpx.Test
 
             string[] tcp = eng.BuildTcpFilterCandidates();
             string[] quic = eng.BuildQuicFilterCandidates();
+            string[] cont = eng.BuildContinuationFilterCandidates();
 
             for (int i = 0; i < tcp.Length; i++)
                 Check(CompileWithMessage(tcp[i], i == 0), "TCP aday " + (i + 1) + " derleniyor");
@@ -780,11 +1148,16 @@ namespace Etodpx.Test
             for (int i = 0; i < quic.Length; i++)
                 Check(CompileWithMessage(quic[i], i == 0), "QUIC aday " + (i + 1) + " derleniyor");
 
+            for (int i = 0; i < cont.Length; i++)
+                Check(CompileWithMessage(cont[i], false), "TCP devam aday " + (i + 1) + " derleniyor");
+
             // En dar filtreler kullanilabilmeli; genise dusmek basarimi dusurur.
             Check(DpiEngine.FilterCompiles(tcp[0], DivertLayer.Network),
                   "TCP en dar filtre (payload duyarli) kabul edildi");
             Check(DpiEngine.FilterCompiles(quic[0], DivertLayer.Network),
                   "QUIC en dar filtre (Initial duyarli) kabul edildi");
+            Check(DpiEngine.FilterCompiles(cont[0], DivertLayer.Network),
+                  "TCP devam en dar filtre kabul edildi");
         }
 
         private static bool CompileWithMessage(string filter, bool verbose)
@@ -1002,6 +1375,12 @@ namespace Etodpx.Test
             var defaults = new Config();
             Check(defaults.TlsMode == "disorder" && !defaults.FakeTtl,
                   "ilk acilis varsayilanlari guvenli");
+            Check(defaults.EffectiveFakeTtl(false) == 4 && defaults.EffectiveFakeTtl(true) == 4,
+                  "fake_ttl_value_v6=0 iken IPv6 hop-limit IPv4 degerini izliyor");
+
+            defaults.FakeTtlValueV6 = 6;
+            Check(defaults.EffectiveFakeTtl(false) == 4 && defaults.EffectiveFakeTtl(true) == 6,
+                  "fake_ttl_value_v6 ayarlandiginda IPv6 ayri hop-limit kullaniyor");
 
             string path = Path.GetTempFileName();
             try
@@ -1009,12 +1388,13 @@ namespace Etodpx.Test
                 File.WriteAllText(path,
                     "tls = yanlis-mod\n" +
                     "fake_ttl = belki\n" +
+                    "fake_ttl_value_v6 = 7\n" +
                     "threads = 999\n" +
                     "bilinmeyen = deger\n",
                     new UTF8Encoding(false));
                 Config c = Config.Load(path);
-                Check(c.TlsMode == "disorder" && !c.FakeTtl && c.Threads == 16,
-                      "gecersiz ayarlar guvenli degere donuyor");
+                Check(c.TlsMode == "disorder" && !c.FakeTtl && c.Threads == 16 && c.FakeTtlValueV6 == 7,
+                      "gecersiz ayarlar guvenli degere donuyor ve fake_ttl_value_v6 okunuyor");
                 Check(c.Warnings.Count == 4, "gecersiz ayarlar gorunur uyari uretiyor",
                       "uyari sayisi: " + c.Warnings.Count);
             }

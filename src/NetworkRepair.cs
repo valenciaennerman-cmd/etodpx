@@ -54,7 +54,18 @@ namespace Etodpx
 
     internal static class NetworkRepair
     {
-        private const int CommandTimeoutMs = 20000;
+        // PowerShell'in soguk acilisi (DnsClient/NetTCPIP modulleri, antivirus
+        // taramasi) yavas dizustu bilgisayarlarda tek basina 10-15 sn surebiliyor.
+        // 20 sn'lik eski sinir geri alma betigini de yarida kesip makineyi
+        // Cloudflare DNS'inde birakabiliyordu.
+        internal const int CommandTimeoutMs = 60000;
+        // Sifreli DNS dogrulamasinin toplam suresi. Isletim suresi bundan uzun
+        // olmali; eskiden betik icindeki bekleme (hedef x 12 x 0,8 sn,
+        // ustune her basarisiz sorgunun kendi suresi) 20 sn'lik isletim sinirini
+        // asiyor ve gecikmesi yuksek Wi-Fi'de saglayicilar zaman asimiyla
+        // "basarisiz" sayiliyordu.
+        internal const int DohValidationSeconds = 45;
+        internal const int DohCommandTimeoutMs = 120000;
 
         // "Tek tikla duzelt" akisinin olctugu hedefler. Hem strateji bulucuya
         // hem DNS dogrulamasina ayni liste gidiyor; ikisi ayrisirsa DNS'i
@@ -266,7 +277,7 @@ namespace Etodpx
             string script = BuildDohScript(servers, backup.InterfaceIndex,
                                            provider.Template, validationHosts);
 
-            ProcessResult run = RunPowerShell(script);
+            ProcessResult run = RunPowerShell(script, DohCommandTimeoutMs);
             if (run.Success && Marker(run.Output, "ETODPX_DNS_CHANGED") == "1") return true;
             error = CleanError(run);
             return false;
@@ -282,13 +293,16 @@ namespace Etodpx
         //
         // Cmdlet gercek bir hata firlatiyor, ustelik sonucu geri okuyup
         // dogruluyoruz: sessizce hicbir sey yapmayan bir adim kalmasin.
+        //
+        // Windows 10 gibi DoH cmdlet'i bulunmayan surumlerde ise dogrudan saglayici
+        // DNS adresleri yazilip gercek hedeflerle zehirlenme karsiti dogrulama
+        // yapilir; dogrulama gecmezse hata firlatilir ve eski ayar geri yuklenir.
         internal static string BuildDohScript(string servers, int interfaceIndex,
                                               string template, string[] validationHosts)
         {
             return
                 "$ErrorActionPreference='Stop';" +
-                "if(-not (Get-Command Set-DnsClientDohServerAddress -ErrorAction SilentlyContinue))" +
-                "{throw 'Bu Windows surumu sifreli DNS ayarini desteklemiyor'};" +
+                "$hasDoh=$null -ne (Get-Command Set-DnsClientDohServerAddress -ErrorAction SilentlyContinue);" +
                 "$t=" + PsQuote(template) + ";" +
                 "function Set-Doh([string]$s){" +
                 " if(Get-DnsClientDohServerAddress -ServerAddress $s -ErrorAction SilentlyContinue){" +
@@ -303,7 +317,7 @@ namespace Etodpx
                 " if(-not $v -or -not $v.AutoUpgrade -or $v.AllowFallbackToUdp)" +
                 "  {throw ('Sifreli DNS etkinlestirilemedi: '+$s)}" +
                 "};" +
-                "foreach($s in @(" + servers + ")){Set-Doh $s};" +
+                "if($hasDoh){foreach($s in @(" + servers + ")){Set-Doh $s}};" +
                 "Set-DnsClientServerAddress -InterfaceIndex " + interfaceIndex +
                 " -ServerAddresses @(" + servers + ");" +
                 "Clear-DnsClientCache;" +
@@ -313,12 +327,16 @@ namespace Etodpx
                 // icin HEPSI cozulmeden "DNS duzeldi" demiyoruz - biri hala
                 // zehirliyse o site icin hicbir sey degismemis olur.
                 "$bad=@('195.175.254.2','0.0.0.0');" +
+                // Deneme sayisi degil ortak son tarih: basarisiz bir sorgu kendisi
+                // saniyelerce surebiliyor ve sayac bunu hesaba katmiyordu.
+                "$deadline=(Get-Date).AddSeconds(" + DohValidationSeconds + ");" +
                 "foreach($h in @(" + PsArray(validationHosts) + ")){" +
                 " $ok=$false;" +
-                " for($i=0;$i -lt 12;$i++){" +
+                " while($true){" +
                 "  try{$a=@(Resolve-DnsName -Name $h -Type A -DnsOnly" +
                 "   -ErrorAction Stop|Where-Object {$_.IPAddress -and $bad -notcontains $_.IPAddress});" +
                 "   if($a.Count -gt 0){$ok=$true;break}}catch{}" +
+                "  if((Get-Date) -ge $deadline){break};" +
                 "  Start-Sleep -Milliseconds 800" +
                 " };" +
                 " if(-not $ok){throw ('Yeni DNS ayariyla cozumlenemedi: '+$h)}" +
@@ -331,6 +349,98 @@ namespace Etodpx
             if (backup == null || provider == null) return;
             backup.ManagedServers = provider.Servers(backup.HasGlobalV6);
             SaveBackup(backup);
+        }
+
+        // --- ag degisimi
+        //
+        // Sifreli DNS Wi-Fi agina degil ADAPTORE yaziliyor. Dizustu baska bir aga
+        // (yurt, kafe, okul) gectiginde ayar da onunla gidiyor. Giris sayfali
+        // (captive portal) ya da dis DNS'i kapatan aglarda UDP'ye dusus kapali
+        // oldugu icin hic ad cozulmuyor: giris sayfasi bile acilmiyor, internet
+        // tamamen gidiyor. Kablolu masaustu hep ayni agda kaldigi icin bunu
+        // yasamiyordu.
+        //
+        // Sistem cozumleyicisi cevap veremiyor ama agin kendi (DHCP) DNS'i
+        // verebiliyorsa bozuk olan bizim ayarimizdir; yedege donuluyor. Ag hic
+        // yoksa ya da kullanici DNS'i kendisi degistirmisse dokunulmuyor.
+
+        internal enum ManagedDnsState { NotManaged, Healthy, NetworkDown, BlockedHere }
+
+        public static List<DnsBackup> ManagedBackups()
+        {
+            var list = new List<DnsBackup>();
+            try
+            {
+                foreach (string path in Directory.GetFiles(AppDir(), "etodpx-dns-backup-*.conf"))
+                {
+                    DnsBackup b = LoadBackup(path);
+                    if (b != null && b.ManagedServers != null && b.ManagedServers.Length > 0) list.Add(b);
+                }
+            }
+            catch { }
+            return list;
+        }
+
+        public static ManagedDnsState ProbeManagedDns(DnsBackup backup)
+        {
+            if (backup == null || backup.ManagedServers == null) return ManagedDnsState.NotManaged;
+
+            ProcessResult run = RunPowerShell(BuildManagedProbeScript(backup.InterfaceIndex));
+            if (!run.Success) return ManagedDnsState.NetworkDown;
+
+            string current;
+            try { current = Decode(Marker(run.Output, "ETODPX_CURRENT_B64")); }
+            catch { return ManagedDnsState.NetworkDown; }
+            return ClassifyProbe(SplitServers(current), backup.ManagedServers,
+                                 Marker(run.Output, "ETODPX_PROBE"));
+        }
+
+        internal static ManagedDnsState ClassifyProbe(string[] current, string[] managed, string probe)
+        {
+            // Router'in duyurdugu IPv6 DNS'i listeye eklenebiliyor; bu yuzden esitlik
+            // degil kapsama. Yazdigimiz sunuculardan biri eksikse DNS'i baskasi degistirmis.
+            if (managed == null || managed.Length == 0) return ManagedDnsState.NotManaged;
+            foreach (string server in managed)
+            {
+                bool found = false;
+                foreach (string c in current ?? new string[0])
+                    if (string.Equals(server, c, StringComparison.OrdinalIgnoreCase)) { found = true; break; }
+                if (!found) return ManagedDnsState.NotManaged;
+            }
+
+            if (probe == "SYSTEM_OK") return ManagedDnsState.Healthy;
+            if (probe == "DHCP_OK") return ManagedDnsState.BlockedHere;
+            return ManagedDnsState.NetworkDown;
+        }
+
+        // Once sistem cozumleyicisi (bizim sifreli DNS'imiz) denenir; ag yeni
+        // baglanmis olabilir, birkac saniye taninir. Olmazsa adaptorun DHCP'den
+        // aldigi DNS dogrudan sorulur - giris sayfali aglar orada cevap verir.
+        internal static string BuildManagedProbeScript(int interfaceIndex)
+        {
+            return
+                "$ErrorActionPreference='Stop';" +
+                "$enc=[Text.Encoding]::UTF8;" +
+                "$cur=@(Get-DnsClientServerAddress -InterfaceIndex " + interfaceIndex +
+                " -ErrorAction SilentlyContinue|ForEach-Object {$_.ServerAddresses}|Where-Object {$_});" +
+                "'ETODPX_CURRENT_B64='+[Convert]::ToBase64String($enc.GetBytes(($cur -join \"`n\")));" +
+                "$a=Get-NetAdapter -InterfaceIndex " + interfaceIndex + " -ErrorAction SilentlyContinue;" +
+                "if(-not $a -or $a.Status -ne 'Up'){'ETODPX_PROBE=DOWN';return};" +
+                "$p='www.msftconnecttest.com';" +
+                "for($i=0;$i -lt 3;$i++){" +
+                " try{if(@(Resolve-DnsName -Name $p -Type A -DnsOnly -ErrorAction Stop|" +
+                "  Where-Object {$_.IPAddress}).Count -gt 0){'ETODPX_PROBE=SYSTEM_OK';return}}catch{};" +
+                " Start-Sleep -Milliseconds 1500" +
+                "};" +
+                "$g=[string]$a.InterfaceGuid;" +
+                "if($g -notmatch '^\\{'){$g='{'+$g+'}'};" +
+                "$k='HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\'+$g;" +
+                "$d=[string](Get-ItemProperty -Path $k -Name DhcpNameServer -ErrorAction SilentlyContinue).DhcpNameServer;" +
+                "foreach($s in @($d -split '[ ,]'|Where-Object {$_})){" +
+                " try{if(@(Resolve-DnsName -Name $p -Type A -DnsOnly -Server $s -ErrorAction Stop|" +
+                "  Where-Object {$_.IPAddress}).Count -gt 0){'ETODPX_PROBE=DHCP_OK';return}}catch{}" +
+                "};" +
+                "'ETODPX_PROBE=DOWN'";
         }
 
         public static bool Restore(DnsBackup backup, out string error)
@@ -628,6 +738,11 @@ namespace Etodpx
 
         private static ProcessResult RunPowerShell(string script)
         {
+            return RunPowerShell(script, CommandTimeoutMs);
+        }
+
+        private static ProcessResult RunPowerShell(string script, int timeoutMs)
+        {
             string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
             var output = new StringBuilder();
             var error = new StringBuilder();
@@ -658,7 +773,7 @@ namespace Etodpx
                         return new ProcessResult { Error = "PowerShell başlatılamadı." };
                     p.BeginOutputReadLine();
                     p.BeginErrorReadLine();
-                    if (!p.WaitForExit(CommandTimeoutMs))
+                    if (!p.WaitForExit(timeoutMs))
                     {
                         try { p.Kill(); } catch { }
                         return new ProcessResult { Output = output.ToString(), Error = "Ağ ayarı zaman aşımına uğradı." };

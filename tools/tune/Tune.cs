@@ -60,6 +60,8 @@ namespace Etodpx.Tune
     internal static class Tuner
     {
         private static string[] _targets;
+        private static string _scanHostlist;
+        private static string[] _missingFromHosts = new string[0];
         // Dogrulama derinligi: kazanan ayar bu kadar denemeyi gecmek zorunda.
         private const int TriesPerTarget = 3;
         // Tarama derinligi. Sureyi belirleyen sey calismayan stratejiler: basarisiz
@@ -134,6 +136,8 @@ namespace Etodpx.Tune
                 Pause();
                 return Finish(3);
             }
+
+            PrepareHostlist();
 
             var strategies = BuildStrategies();
 
@@ -288,6 +292,7 @@ namespace Etodpx.Tune
             }
 
             WriteConf(best);
+            AddMissingHosts();
             WL();
             WL("  Yazildi. etodpx'i yeniden baslat.");
             WL();
@@ -527,6 +532,7 @@ namespace Etodpx.Tune
             var cfg = new Config();
             cfg.QuicMode = "drop";
             cfg.Threads = 2;
+            cfg.HostlistPath = _scanHostlist;
             s.ApplyTo(cfg);
 
             var eng = new DpiEngine(cfg);
@@ -577,8 +583,7 @@ namespace Etodpx.Tune
 
             if (ips.Length == 0) return NoSystemAnswer(host);
 
-            foreach (var ip in ips)
-                if (IsKnownPoisonAddress(ip)) return Diag.DnsPoisoned;
+            if (HasKnownPoison(ips)) return Diag.DnsPoisoned;
 
             // Olcutun tamami IsDnsPoisoned icinde.
             if (IsDnsPoisoned(host, ips)) return Diag.DnsPoisoned;
@@ -619,6 +624,16 @@ namespace Etodpx.Tune
                    value == "0.0.0.0" || value == "::";
         }
 
+        // Bilinen engel sayfasi IP'leri (Turk Telekom + bosa dusurme).
+        internal static bool HasKnownPoison(System.Net.IPAddress[] ips)
+        {
+            foreach (var ip in ips)
+            {
+                if (IsKnownPoisonAddress(ip)) return true;
+            }
+            return false;
+        }
+
         // Tek referansla karsilastirmak yaniltici: CDN'ler her cozumleyiciye
         // havuzdan farkli adres dondurebiliyor ve bu masum fark zehirli gibi
         // gorunuyor. Iki bagimsiz referans soruluyor, bayrak yalnizca ikisi
@@ -634,9 +649,24 @@ namespace Etodpx.Tune
             if (r1.Count == 0) r1 = ResolveViaDoh(host, "https://1.1.1.1/dns-query");
             if (r2.Count == 0) r2 = ResolveViaDoh(host, "https://dns.google/resolve");
 
+            var sys = new List<string>();
+            foreach (var a in systemIps)
+                if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    sys.Add(a.ToString());
+
+            bool compareFailed;
+            bool poisoned = JudgeDns(sys, r1, r2, out compareFailed);
+            if (compareFailed) _dnsCompareFailed = true;
+            return poisoned;
+        }
+
+        internal static bool JudgeDns(List<string> sys, List<string> r1, List<string> r2,
+                                      out bool compareFailed)
+        {
+            compareFailed = false;
             if (r1.Count == 0 || r2.Count == 0)
             {
-                _dnsCompareFailed = true;
+                compareFailed = true;
                 return false;
             }
 
@@ -645,10 +675,6 @@ namespace Etodpx.Tune
                 if (r2.Contains(a)) { referencesAgree = true; break; }
             if (!referencesAgree) return false;          // adres zaten degisken
 
-            var sys = new List<string>();
-            foreach (var a in systemIps)
-                if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    sys.Add(a.ToString());
             if (sys.Count == 0) return false;
 
             foreach (var a in sys)
@@ -876,6 +902,7 @@ namespace Etodpx.Tune
             var cfg = new Config();
             cfg.QuicMode = "drop";        // olcum sirasinda QUIC yolu devre disi kalsin
             cfg.Threads = 2;
+            cfg.HostlistPath = _scanHostlist;
             s.ApplyTo(cfg);
 
             var eng = new DpiEngine(cfg);
@@ -1096,6 +1123,62 @@ namespace Etodpx.Tune
             {
                 WL("  UYARI: etodpx yeniden baslatilamadi: " + ex.Message);
             }
+        }
+
+        // Motor yalnizca hosts.txt icindeki adlara dokunuyor. Kullanici listede
+        // olmayan bir hedef verirse ("etodpx-tune.exe reddit.com") motor her
+        // denemede o el sikismayi es gecer ve 31 stratejinin tamami 0/1 cikar -
+        // "IP engeli" gibi gorunur. Tarama suresince liste kapatiliyor ki
+        // olculen hedef kesinlikle islensin; sonunda eksik adlar hosts.txt'ye
+        // ekleniyor ki kullanici etodpx'i actiginda da ayni sey gecerli olsun.
+        private static void PrepareHostlist()
+        {
+            _scanHostlist = null;
+            _missingFromHosts = MissingHosts(HostsFilePath(), _targets);
+            if (_missingFromHosts.Length > 0)
+            {
+                WL("  Not: " + string.Join(", ", _missingFromHosts) + " hosts.txt icinde yok;");
+                WL("       kazanan bulunursa listeye de eklenecek.");
+                WL();
+            }
+        }
+
+        internal static unsafe string[] MissingHosts(string hostsPath, string[] targets)
+        {
+            if (!File.Exists(hostsPath)) return new string[0];
+            Hostlist list = Hostlist.Load(hostsPath, null);
+            if (list == null) return new string[0];
+            try
+            {
+                var missing = new List<string>();
+                foreach (string t in targets)
+                {
+                    byte[] b = Encoding.ASCII.GetBytes(t);
+                    bool hit;
+                    fixed (byte* p = b) hit = list.Match(p, b.Length);
+                    if (!hit) missing.Add(t);
+                }
+                return missing.ToArray();
+            }
+            finally { list.Dispose(); }
+        }
+
+        private static void AddMissingHosts()
+        {
+            if (_missingFromHosts.Length == 0) return;
+            string path = HostsFilePath();
+            if (!File.Exists(path)) return;
+            var lines = new List<string>(File.ReadAllLines(path));
+            foreach (string h in _missingFromHosts) lines.Add(h);
+            File.WriteAllLines(path, lines.ToArray(), new UTF8Encoding(false));
+            WL("  -> " + path + " (+" + string.Join(", ", _missingFromHosts) + ")");
+        }
+
+        private static string HostsFilePath()
+        {
+            string dir = Path.GetDirectoryName(
+                System.Reflection.Assembly.GetExecutingAssembly().Location);
+            return Path.Combine(dir, "hosts.txt");
         }
 
         private const string TuneHeader = "# --- etodpx-tune tarafindan bulundu: ";

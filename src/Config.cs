@@ -17,6 +17,7 @@ namespace Etodpx
         public bool FakeBadSum = false;           // sahte paketi bozuk TCP checksum ile gonder
         public bool FakeTtl = false;              // sahte TCP paketi; hatta gore ayarlanmadan acilmaz
         public int FakeTtlValue = 4;              // hatta gore degisir - etodpx-tune ile bul
+        public int FakeTtlValueV6 = 0;            // 0 = FakeTtlValue ile ayni; >0 ise IPv6 icin ayri hop siniri
         public bool FakeWrongSeq = false;         // sahte paketi pencere disi seq ile gonder
         public int FakeWrongSeqDelta = 0x10000;   // gercek seq bu kadar geriden
         public int FakeCount = 1;                 // her tur icin sahte paket sayisi
@@ -50,6 +51,12 @@ namespace Etodpx
 
         public string SourcePath = null;
         public List<string> Warnings = new List<string>();
+
+        // IPv6 icin ozel deger verilmisse onu, yoksa ortak TTL degerini doner.
+        public int EffectiveFakeTtl(bool isV6)
+        {
+            return isV6 && FakeTtlValueV6 > 0 ? FakeTtlValueV6 : FakeTtlValue;
+        }
 
         public static Config Load(string path)
         {
@@ -90,6 +97,7 @@ namespace Etodpx
             FakeBadSum = other.FakeBadSum;
             FakeTtl = other.FakeTtl;
             FakeTtlValue = other.FakeTtlValue;
+            FakeTtlValueV6 = other.FakeTtlValueV6;
             FakeWrongSeq = other.FakeWrongSeq;
             FakeWrongSeqDelta = other.FakeWrongSeqDelta;
             FakeCount = other.FakeCount;
@@ -129,6 +137,7 @@ namespace Etodpx
                 case "fake_badsum": FakeBadSum = Bool(k, v, FakeBadSum); break;
                 case "fake_ttl": FakeTtl = Bool(k, v, FakeTtl); break;
                 case "fake_ttl_value": FakeTtlValue = Int(k, v, FakeTtlValue, 1, 64); break;
+                case "fake_ttl_value_v6": FakeTtlValueV6 = Int(k, v, FakeTtlValueV6, 0, 64); break;
                 case "fake_wrongseq": FakeWrongSeq = Bool(k, v, FakeWrongSeq); break;
                 case "fake_wrongseq_delta": FakeWrongSeqDelta = Int(k, v, FakeWrongSeqDelta, 1024, 0x1000000); break;
                 case "fake_count": FakeCount = Int(k, v, FakeCount, 1, 8); break;

@@ -10,13 +10,13 @@ set "CSC=%FW%\csc.exe"
   /warn:3 /nowarn:1701,1702 ^
   /out:"bin\etodpx-selftest.exe" ^
   /main:Etodpx.Test.SelfTest ^
-  "src\Config.cs" "src\NetworkRepair.cs" "src\engine\*.cs" ^
+  "src\Config.cs" "src\NetworkRepair.cs" "src\StartupTask.cs" "src\engine\*.cs" ^
   "tools\tune\Tune.cs" "tools\selftest\SelfTest.cs"
 
 if errorlevel 1 exit /b 1
 
 pushd "bin"
-call ".\etodpx-selftest.exe"
+call ".\etodpx-selftest.exe" %*
 set RC=%ERRORLEVEL%
 popd
 exit /b %RC%

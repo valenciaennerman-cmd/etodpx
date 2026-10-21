@@ -30,8 +30,15 @@ namespace Etodpx.Engine
 
         private IntPtr _tcpHandle = WinDivert.InvalidHandle;
         private IntPtr _quicHandle = WinDivert.InvalidHandle;
+        // Parcali ClientHello'nun devam segmentleri icin SNIFF tutamagi.
+        private IntPtr _contHandle = WinDivert.InvalidHandle;
         private readonly List<Thread> _threads = new List<Thread>();
+        private readonly List<DesyncWorker> _workers = new List<DesyncWorker>();
+        private readonly List<Hostlist> _retiredHosts = new List<Hostlist>();
         private Hostlist _hosts;
+        private FileSystemWatcher _hostWatcher;
+        private int _reloadQueued;
+        private ContinuationTable _continuations;
         private volatile bool _running;
         private int _generation;
         private int _faultRaised;
@@ -46,9 +53,15 @@ namespace Etodpx.Engine
         public int HostlistCount { get; private set; }
         public string ActiveQuicFilter { get; private set; }
         public string QuicWarning { get; private set; }
+        public string ActiveContinuationFilter { get; private set; }
+        // Devam tutamagi acilamadiysa koruma yine calisir; yalnizca SNI'si ikinci
+        // segmente tasan ClientHello'lar eskisi gibi dokunulmadan gider.
+        public string ContinuationWarning { get; private set; }
 
         // Beklenmedik hatayi arayuze tasir.
         public event Action<string> Fault;
+        // hosts.txt canli yenilendiginde arayuze bildirir.
+        public event Action<int> HostlistReloaded;
 
         public DpiEngine(Config cfg) { _cfg = cfg; }
 
@@ -67,6 +80,8 @@ namespace Etodpx.Engine
             ActiveTcpFilter = null;
             ActiveQuicFilter = null;
             QuicWarning = null;
+            ActiveContinuationFilter = null;
+            ContinuationWarning = null;
             Interlocked.Exchange(ref _faultRaised, 0);
 
             int generation = unchecked(Volatile.Read(ref _generation) + 1);
@@ -98,6 +113,12 @@ namespace Etodpx.Engine
 
             _hosts = LoadHostlist();
             HostlistCount = _hosts == null ? 0 : _hosts.Count;
+            StartHostWatcher();
+
+            // LSO'suz kartlarda (Wi-Fi) yigin ClientHello'yu kendisi boluyor ve SNI
+            // ikinci segmente dusebiliyor. Devam segmentlerinin kopyasi olmadan o
+            // baglantilara karar verilemiyor. Acilamazsa koruma yine baslar.
+            if (WantsContinuations(_hosts != null)) OpenContinuations();
 
             _running = true;
             _stats.MarkStart();
@@ -106,8 +127,48 @@ namespace Etodpx.Engine
                 ? _cfg.Threads
                 : Math.Max(1, Math.Min(4, Environment.ProcessorCount / 2));
 
-            for (int i = 0; i < tcpThreads; i++) SpawnWorker(_tcpHandle, false, i, generation);
-            if (_quicHandle != WinDivert.InvalidHandle) SpawnWorker(_quicHandle, true, 100, generation);
+            Hostlist hosts = _hosts;
+            ContinuationTable continuations = _continuations;
+            for (int i = 0; i < tcpThreads; i++) SpawnWorker(_tcpHandle, false, i, generation, hosts, continuations);
+            if (_quicHandle != WinDivert.InvalidHandle) SpawnWorker(_quicHandle, true, 100, generation, hosts, null);
+            if (_contHandle != WinDivert.InvalidHandle) SpawnContinuationReader(_contHandle, continuations, generation);
+        }
+
+        // SNI yalnizca alan adi listesi ya da alan adina gore bolme icin gerekli.
+        private bool WantsContinuations(bool hasHostlist)
+        {
+            if (!TlsActive()) return false;
+            if (hasHostlist) return true;
+            string m = _cfg.TlsMode ?? string.Empty;
+            int fixedPos;
+            return (m.Contains("split") || m.Contains("disorder")) && !int.TryParse(_cfg.SplitPos, out fixedPos);
+        }
+
+        private void OpenContinuations()
+        {
+            string filter = PickFilter(BuildContinuationFilterCandidates(), DivertLayer.Network);
+            if (filter == null)
+            {
+                ContinuationWarning = "Parçalı ClientHello filtresi sürücü tarafından kabul edilmedi.";
+                return;
+            }
+
+            var table = new ContinuationTable();
+            try
+            {
+                // Once kopyalasin: yuksek oncelikli tutamak paketi ilk gorur, boylece
+                // TCP tutamagina yanlislikla takilan bir devam segmenti de kacmaz.
+                short priority = (short)Math.Min(30000, _cfg.DivertPriority + 1);
+                _contHandle = Open(filter, priority, DivertFlags.Sniff | DivertFlags.RecvOnly);
+                _continuations = table;
+                ActiveContinuationFilter = filter;
+            }
+            catch (EngineException ex)
+            {
+                table.Dispose();
+                _contHandle = WinDivert.InvalidHandle;
+                ContinuationWarning = "Parçalı ClientHello yakalanamadı: " + ex.Message;
+            }
         }
 
         public void Stop()
@@ -117,12 +178,15 @@ namespace Etodpx.Engine
 
         private void StopLocked()
         {
+            StopHostWatcher();
+
             if (!_running && _tcpHandle == WinDivert.InvalidHandle &&
-                _quicHandle == WinDivert.InvalidHandle) return;
+                _quicHandle == WinDivert.InvalidHandle && _contHandle == WinDivert.InvalidHandle) return;
             _running = false;
 
             if (_tcpHandle != WinDivert.InvalidHandle) WinDivert.WinDivertShutdown(_tcpHandle, WinDivert.ShutdownBoth);
             if (_quicHandle != WinDivert.InvalidHandle) WinDivert.WinDivertShutdown(_quicHandle, WinDivert.ShutdownBoth);
+            if (_contHandle != WinDivert.InvalidHandle) WinDivert.WinDivertShutdown(_contHandle, WinDivert.ShutdownBoth);
 
             // Ortak son tarih; is parcacigi basina beklemek kapanisi uzatirdi.
             var deadline = Environment.TickCount + 1500;
@@ -137,16 +201,22 @@ namespace Etodpx.Engine
 
             var pending = _threads.ToArray();
             _threads.Clear();
+            lock (_workers) { _workers.Clear(); }
 
-            IntPtr tcp = _tcpHandle, quic = _quicHandle;
+            IntPtr tcp = _tcpHandle, quic = _quicHandle, cont = _contHandle;
             Hostlist hosts = _hosts;
+            Hostlist[] retired = _retiredHosts.ToArray();
+            _retiredHosts.Clear();
+            ContinuationTable continuations = _continuations;
             _tcpHandle = WinDivert.InvalidHandle;
             _quicHandle = WinDivert.InvalidHandle;
+            _contHandle = WinDivert.InvalidHandle;
             _hosts = null;
+            _continuations = null;
 
             if (allExited)
             {
-                CloseHandles(tcp, quic, hosts);
+                CloseHandles(tcp, quic, cont, hosts, retired, continuations);
                 return;
             }
 
@@ -160,21 +230,29 @@ namespace Etodpx.Engine
                     try { t.Join(); }
                     catch { }
                 }
-                CloseHandles(tcp, quic, hosts);
+                CloseHandles(tcp, quic, cont, hosts, retired, continuations);
             });
         }
 
-        private static void CloseHandles(IntPtr tcp, IntPtr quic, Hostlist hosts)
+        private static void CloseHandles(IntPtr tcp, IntPtr quic, IntPtr cont, Hostlist hosts,
+                                         Hostlist[] retired, ContinuationTable continuations)
         {
             if (tcp != WinDivert.InvalidHandle) WinDivert.WinDivertClose(tcp);
             if (quic != WinDivert.InvalidHandle) WinDivert.WinDivertClose(quic);
-            // Is parcaciklari cikmadan serbest birakilamaz: sicak yol bu blogu
+            if (cont != WinDivert.InvalidHandle) WinDivert.WinDivertClose(cont);
+            // Is parcaciklari cikmadan serbest birakilamaz: sicak yol bu bloklari
             // pointer uzerinden okuyor.
             if (hosts != null) hosts.Dispose();
+            if (retired != null)
+            {
+                foreach (var r in retired) if (r != null) r.Dispose();
+            }
+            if (continuations != null) continuations.Dispose();
         }
 
-        // Ayar dosyasindaki yol goreceliyse exe klasorune gore cozulur.
-        private Hostlist LoadHostlist()
+        // --- canli hostlist izleme ve yenileme
+
+        public string ResolvedHostlistPath()
         {
             string path = _cfg.HostlistPath;
             if (string.IsNullOrEmpty(path)) return null;
@@ -184,7 +262,98 @@ namespace Etodpx.Engine
                     System.Reflection.Assembly.GetExecutingAssembly().Location);
                 path = Path.Combine(dir, path);
             }
+            return path;
+        }
+
+        private Hostlist LoadHostlist()
+        {
+            string path = ResolvedHostlistPath();
+            if (string.IsNullOrEmpty(path)) return null;
             return Hostlist.Load(path, _cfg.Warnings);
+        }
+
+        // Motor calisirken hosts.txt dosyasini yeniden okur ve is parcaciklarina
+        // kesintisiz uygular.
+        public int ReloadHostlist()
+        {
+            lock (_lifecycle)
+            {
+                string path = ResolvedHostlistPath();
+                Hostlist fresh = string.IsNullOrEmpty(path) ? null : Hostlist.Load(path, null);
+                Hostlist old = _hosts;
+                _hosts = fresh;
+                HostlistCount = fresh == null ? 0 : fresh.Count;
+
+                if (_running)
+                {
+                    if (old != null) _retiredHosts.Add(old);
+                    lock (_workers)
+                    {
+                        foreach (var w in _workers) w.SetHostlist(fresh);
+                    }
+                }
+                else
+                {
+                    if (old != null) old.Dispose();
+                }
+
+                var cb = HostlistReloaded;
+                if (cb != null) { try { cb(HostlistCount); } catch { } }
+                return HostlistCount;
+            }
+        }
+
+        private void StartHostWatcher()
+        {
+            StopHostWatcher();
+            try
+            {
+                string path = ResolvedHostlistPath();
+                if (string.IsNullOrEmpty(path)) return;
+                string dir = Path.GetDirectoryName(path);
+                string file = Path.GetFileName(path);
+                if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(file) || !Directory.Exists(dir)) return;
+
+                var watcher = new FileSystemWatcher(dir, file)
+                {
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size
+                };
+                FileSystemEventHandler onChange = delegate { ScheduleHostReload(); };
+                RenamedEventHandler onRename = delegate { ScheduleHostReload(); };
+                watcher.Changed += onChange;
+                watcher.Created += onChange;
+                watcher.Deleted += onChange;
+                watcher.Renamed += onRename;
+                watcher.EnableRaisingEvents = true;
+                _hostWatcher = watcher;
+            }
+            catch { _hostWatcher = null; }
+        }
+
+        private void StopHostWatcher()
+        {
+            var w = _hostWatcher;
+            _hostWatcher = null;
+            if (w != null)
+            {
+                try { w.EnableRaisingEvents = false; w.Dispose(); } catch { }
+            }
+        }
+
+        private void ScheduleHostReload()
+        {
+            if (!_running) return;
+            if (Interlocked.CompareExchange(ref _reloadQueued, 1, 0) != 0) return;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    Thread.Sleep(250);
+                    Interlocked.Exchange(ref _reloadQueued, 0);
+                    if (_running) ReloadHostlist();
+                }
+                catch { Interlocked.Exchange(ref _reloadQueued, 0); }
+            });
         }
 
         public void Dispose() { Stop(); }
@@ -193,10 +362,15 @@ namespace Etodpx.Engine
 
         private IntPtr Open(string filter)
         {
+            return Open(filter, _cfg.DivertPriority, DivertFlags.None);
+        }
+
+        private IntPtr Open(string filter, short priority, DivertFlags flags)
+        {
             IntPtr h;
             try
             {
-                h = WinDivert.WinDivertOpen(filter, DivertLayer.Network, _cfg.DivertPriority, (ulong)DivertFlags.None);
+                h = WinDivert.WinDivertOpen(filter, DivertLayer.Network, priority, (ulong)flags);
             }
             catch (DllNotFoundException)
             {
@@ -261,24 +435,77 @@ namespace Etodpx.Engine
 
         // --- is parcaciklari
 
-        private void SpawnWorker(IntPtr handle, bool quic, int seed, int generation)
+        // Liste ve tablo alan olarak degil parametre olarak geciyor: is parcacigi
+        // gec baslarsa o arada Stop() alanlari sifirlamis olabilir.
+        private void SpawnWorker(IntPtr handle, bool quic, int seed, int generation,
+                                 Hostlist hosts, ContinuationTable continuations)
         {
-            var t = new Thread(() => WorkerLoop(handle, quic, seed, generation));
+            StartThread(quic ? "etodpx-quic" : "etodpx-tcp-" + seed,
+                        () => WorkerLoop(handle, quic, seed, generation, hosts, continuations));
+        }
+
+        private void SpawnContinuationReader(IntPtr handle, ContinuationTable table, int generation)
+        {
+            StartThread("etodpx-tcp-devam", () => ContinuationLoop(handle, table, generation));
+        }
+
+        private void StartThread(string name, ThreadStart body)
+        {
+            var t = new Thread(body);
             t.IsBackground = true;
-            t.Name = quic ? "etodpx-quic" : "etodpx-tcp-" + seed;
+            t.Name = name;
             try { t.Priority = ThreadPriority.Highest; } catch { }
             _threads.Add(t);
             try { t.Start(); }
             catch { _threads.Remove(t); throw; }
         }
 
-        private void WorkerLoop(IntPtr handle, bool quic, int seed, int generation)
+        // Yalnizca kopya okur, hicbir seyi geri enjekte etmez. Yardimci yol oldugu
+        // icin hata motoru durdurmaz; en kotu ihtimalle devam segmentleri eskisi
+        // gibi bulunamaz.
+        private void ContinuationLoop(IntPtr handle, ContinuationTable table, int generation)
+        {
+            IntPtr mem = IntPtr.Zero;
+            try
+            {
+                const int cap = 0x10000 + 64;
+                mem = Marshal.AllocHGlobal(cap);
+                byte* buf = (byte*)mem;
+                int consecutiveErrors = 0;
+
+                while (_running && generation == Volatile.Read(ref _generation))
+                {
+                    uint recvLen = 0;
+                    DivertAddress addr = default(DivertAddress);
+                    if (!WinDivert.WinDivertRecv(handle, buf, (uint)cap, &recvLen, &addr))
+                    {
+                        int err = Marshal.GetLastWin32Error();
+                        if (!_running || err == ErrorNoData) break;
+                        if (err == ErrorInsufficientBuffer) continue;
+                        if (++consecutiveErrors > 64) break;
+                        Thread.Sleep(1);
+                        continue;
+                    }
+                    consecutiveErrors = 0;
+                    if (recvLen > 0) table.Record(buf, (int)recvLen);
+                }
+            }
+            catch { }
+            finally
+            {
+                if (mem != IntPtr.Zero) Marshal.FreeHGlobal(mem);
+            }
+        }
+
+        private void WorkerLoop(IntPtr handle, bool quic, int seed, int generation,
+                                Hostlist hosts, ContinuationTable continuations)
         {
             DesyncWorker w = null;
             string terminalFault = null;
             try
             {
-                w = new DesyncWorker(_cfg, _stats, handle, seed, _hosts);
+                w = new DesyncWorker(_cfg, _stats, handle, seed, hosts, continuations);
+                lock (_workers) { _workers.Add(w); }
                 int consecutiveErrors = 0;
 
                 while (_running && generation == Volatile.Read(ref _generation))
@@ -335,7 +562,11 @@ namespace Etodpx.Engine
             }
             finally
             {
-                if (w != null) w.Dispose();
+                if (w != null)
+                {
+                    lock (_workers) { _workers.Remove(w); }
+                    w.Dispose();
+                }
                 if (terminalFault != null) FailGeneration(generation, terminalFault);
             }
         }
@@ -508,6 +739,23 @@ namespace Etodpx.Engine
                 Join(baseExpr, priv, head),
                 Join(baseExpr, PrivateExclusionV4Only(), head),
                 Join(baseExpr, head),
+                baseExpr
+            };
+        }
+
+        // Parcali ClientHello'nun son segmenti: 443'e giden, PSH isaretli, tam
+        // MSS'ten kisa veri. Toplu yuklemenin tam boy segmentleri (PSH yok) ve
+        // butun gelen trafik takilmaz. Tutamak SNIFF kipinde: eslesen paket de
+        // bekletilmez, kullanici alanina yalnizca kopyasi gelir.
+        internal string[] BuildContinuationFilterCandidates()
+        {
+            string baseExpr = "outbound and !impostor and !loopback and tcp and !tcp.Syn and tcp.Psh"
+                            + " and tcp.DstPort == 443 and tcp.PayloadLength > 0"
+                            + " and tcp.PayloadLength <= " + ContinuationTable.MaxPayload;
+            return new[]
+            {
+                Join(baseExpr, PrivateExclusion()),
+                Join(baseExpr, PrivateExclusionV4Only()),
                 baseExpr
             };
         }

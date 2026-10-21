@@ -6,8 +6,8 @@
 // kendi MouseLeftButtonDown'larini Handled isaretliyor.
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
+using System.Net.NetworkInformation;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,6 +29,7 @@ namespace Etodpx.Ui
 
         private const string GlyphMinimize = "\uE921";
         private const string GlyphClose = "\uE8BB";
+        private const string GlyphAdd = "\uE710";
 
         // Dugme metni iki yerde kuruluyor (ilk cizim ve durum tazeleme); ayni
         // sabitten okunmazsa biri guncellenip digeri geride kaliyor.
@@ -37,6 +38,7 @@ namespace Etodpx.Ui
 
         private readonly Config _cfg;
         private readonly DpiEngine _engine;
+        private readonly RepairController _repair;
 
         private readonly SolidColorBrush _bg = New(Palette.Bg);
         private readonly SolidColorBrush _surface = New(Palette.Surface);
@@ -59,19 +61,10 @@ namespace Etodpx.Ui
         private string _lastErrorRaw;
         private bool _repairFailed;
         private string _lastRepairMessage;
+        private string _dnsNotice;
         private RepairFollowUp _repairFollowUp;
         private string _lastRepairLogPath;
         private string _configWarning;
-        private Process _tuneProcess;
-
-        private enum RepairFollowUp
-        {
-            None,
-            Retry,
-            NetworkSettings,
-            Report,
-            AppFolder
-        }
 
         private static SolidColorBrush New(Color c)
         {
@@ -84,6 +77,7 @@ namespace Etodpx.Ui
         {
             _cfg = cfg;
             _engine = engine;
+            _repair = new RepairController(cfg, engine);
             if (cfg.Warnings.Count > 0)
                 _configWarning = string.Join("\n", cfg.Warnings.ToArray());
 
@@ -104,13 +98,17 @@ namespace Etodpx.Ui
             Content = BuildUi();
 
             _engine.Fault += OnEngineFault;
+            _engine.HostlistReloaded += OnHostlistReloaded;
+            NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
 
             SourceInitialized += delegate { ApplyWindowChrome(); };
             Loaded += OnLoaded;
             Closing += delegate
             {
                 _closing = true;
-                StopTuner();
+                _repair.StopTuner();
+                NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+                _engine.HostlistReloaded -= OnHostlistReloaded;
                 _engine.Fault -= OnEngineFault;
                 _engine.Stop();
             };
@@ -200,6 +198,10 @@ namespace Etodpx.Ui
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 8, 0)
             };
+
+            var addBtn = IconButton(GlyphAdd, delegate { PromptAddDomain(); });
+            addBtn.ToolTip = "Engelli site ekle (hosts.txt)";
+            buttons.Children.Add(addBtn);
 
             var minBtn = IconButton(GlyphMinimize, delegate { WindowState = WindowState.Minimized; });
             minBtn.ToolTip = "Simge durumuna küçült";
@@ -383,6 +385,148 @@ namespace Etodpx.Ui
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             if (_cfg.AutoStart && !_engine.IsRunning) OnPowerClick();
+            ScheduleManagedDnsCheck();
+        }
+
+        private void OnNetworkAddressChanged(object sender, EventArgs e)
+        {
+            ScheduleManagedDnsCheck();
+        }
+
+        private void ScheduleManagedDnsCheck()
+        {
+            _repair.ScheduleManagedDnsCheck(
+                delegate { return _closing || _busy; },
+                delegate (string notice)
+                {
+                    try
+                    {
+                        Dispatcher.BeginInvoke(new Action(delegate
+                        {
+                            if (_closing) return;
+                            _dnsNotice = notice;
+                            ApplyState();
+                        }));
+                    }
+                    catch (InvalidOperationException) { }
+                });
+        }
+
+        private void OnHostlistReloaded(int count)
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (_closing || _busy) return;
+                    _dnsNotice = "Alan adı listesi güncellendi (" + count + " kayıt)";
+                    ApplyState();
+                }));
+            }
+            catch (InvalidOperationException) { }
+        }
+
+        public void PromptAddDomain()
+        {
+            if (_busy) return;
+
+            var dlg = new Window
+            {
+                Title = "etodpx - engelli site ekle",
+                Width = 340,
+                Height = 188,
+                WindowStyle = WindowStyle.ToolWindow,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = IsVisible ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen,
+                Background = _bg,
+                FontFamily = UiFont
+            };
+            if (IsVisible) dlg.Owner = this;
+
+            var panel = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Kapsama alınacak alan adını gir (ör. x.com):",
+                Foreground = _text,
+                FontSize = 12.5,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+
+            var box = new TextBox
+            {
+                Background = _surface,
+                Foreground = _text,
+                BorderBrush = _borderB,
+                CaretBrush = _text,
+                Padding = new Thickness(8, 6, 8, 6),
+                FontSize = 12.5
+            };
+            panel.Children.Add(box);
+
+            var tuneCheck = new CheckBox
+            {
+                Content = "Ekledikten sonra bu site için otomatik ayar ara",
+                Foreground = _sub,
+                FontSize = 11.5,
+                Margin = new Thickness(0, 10, 0, 12)
+            };
+            panel.Children.Add(tuneCheck);
+
+            var btns = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            var cancelBtn = new Button
+            {
+                Content = "İptal",
+                Width = 76,
+                Height = 26,
+                Margin = new Thickness(0, 0, 8, 0),
+                IsCancel = true
+            };
+            var okBtn = new Button
+            {
+                Content = "Ekle",
+                Width = 76,
+                Height = 26,
+                IsDefault = true
+            };
+            bool accepted = false;
+            okBtn.Click += delegate { accepted = true; dlg.Close(); };
+            btns.Children.Add(cancelBtn);
+            btns.Children.Add(okBtn);
+            panel.Children.Add(btns);
+
+            dlg.Content = panel;
+            dlg.Loaded += delegate { box.Focus(); };
+            dlg.ShowDialog();
+            if (!accepted) return;
+
+            string raw = box.Text;
+            string hostsPath = System.IO.Path.Combine(Program.AppDir(),
+                string.IsNullOrEmpty(_cfg.HostlistPath) ? "hosts.txt" : _cfg.HostlistPath);
+            string normalized;
+            string error;
+            bool added = Hostlist.AddHostToFile(hostsPath, raw, out normalized, out error);
+            if (error != null)
+            {
+                MessageBox.Show(this, error, "etodpx - geçersiz alan adı",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            _engine.ReloadHostlist();
+            if (tuneCheck.IsChecked == true && !string.IsNullOrEmpty(normalized))
+            {
+                StartRepairForTargets(new[] { normalized }, normalized);
+                return;
+            }
+
+            _dnsNotice = added
+                ? (normalized + " listeye eklendi ve anında etkinleştirildi")
+                : (normalized + " zaten listede yer alıyor");
+            ApplyState();
         }
 
         private void OnPowerClick()
@@ -403,7 +547,7 @@ namespace Etodpx.Ui
                 string err = null;
                 try
                 {
-                    if (starting) StartEngineWithRecovery();
+                    if (starting) _repair.StartEngineWithRecovery();
                     else _engine.Stop();
                 }
                 catch (Exception ex)
@@ -450,17 +594,17 @@ namespace Etodpx.Ui
 
             if (_repairFollowUp == RepairFollowUp.NetworkSettings)
             {
-                OpenNetworkSettings();
+                RepairController.OpenNetworkSettings();
                 return;
             }
             if (_repairFollowUp == RepairFollowUp.Report)
             {
-                OpenRepairLog();
+                RepairController.OpenRepairLog(_lastRepairLogPath);
                 return;
             }
             if (_repairFollowUp == RepairFollowUp.AppFolder)
             {
-                OpenAppFolder();
+                RepairController.OpenAppFolder();
                 return;
             }
 
@@ -489,292 +633,83 @@ namespace Etodpx.Ui
                 "etodpx - otomatik düzelt", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes) return;
 
+            StartRepairForTargets(null, "Discord ve Roblox");
+        }
+
+        private void StartRepairForTargets(string[] customTargets, string label)
+        {
+            string tuner = System.IO.Path.Combine(Program.AppDir(), "etodpx-tune.exe");
+            if (!File.Exists(tuner)) return;
+
             _busy = true;
             SetLastError(null);
             _repairFailed = false;
             _lastRepairMessage = null;
+            _dnsNotice = null;
             _repairFollowUp = RepairFollowUp.None;
             _lastRepairLogPath = null;
             _power.SetBusy(true);
             SetRepairBusy(true, "Bağlantı ayarlanıyor…");
             _title.Foreground = _text;
             _title.Text = "AYARLANIYOR";
-            _subtitle.Text = "Discord ve Roblox için uygun ayar aranıyor";
+            _subtitle.Text = label + " için uygun ayar aranıyor";
             _footer.Foreground = _sub;
             _footer.Text = "Bu işlem birkaç dakika sürebilir · pencereyi kapatma";
 
-            ThreadPool.QueueUserWorkItem(delegate { RunAutomaticRepair(tuner); });
-        }
-
-        private void RunAutomaticRepair(string tuner)
-        {
-            TunerRun run = null;
-            TunerRun firstRun = null;
-            DnsBackup dnsBackup = null;
-            bool dnsMayHaveChanged = false;
-            bool keepDns = false;
-            string repairError = null;
-            string engineError = null;
-            string dnsRepairError = null;
-            string dnsProvider = null;
-            var dnsTrace = new System.Text.StringBuilder();
-            List<string> closedCopies = null;
-
-            try
+            ThreadPool.QueueUserWorkItem(delegate
             {
-                closedCopies = CloseOtherEtodpxCopies();
-                RepairProgress("1/4 · Ağ sürücüsü kontrol ediliyor", "Koruma test için kısa süre durduruldu");
-                _engine.Stop();
+                RepairOutcome outcome = _repair.RunAutomaticRepair(
+                    tuner,
+                    customTargets,
+                    delegate { return _closing; },
+                    RepairProgress);
 
-                RepairProgress("2/4 · DNS ve bağlantı engeli ölçülüyor", "İlk tanı birkaç saniye sürebilir");
-                run = ExecuteTuner(tuner);
-                MergeCopies(run, closedCopies);
-                firstRun = run;
-
-                if (IsDnsProblem(run.Code))
+                if (_closing) return;
+                try
                 {
-                    string dnsError;
-                    dnsBackup = NetworkRepair.CaptureActiveDns(out dnsError);
-                    if (dnsBackup == null)
+                    Dispatcher.BeginInvoke(new Action(delegate
                     {
-                        dnsRepairError = "Aktif bağlantının DNS ayarı güvenle yedeklenemedi: " + dnsError;
-                    }
-                    else
-                    {
-                        // Komut son adimda patlasa bile DNS'e dokunmus olabilir;
-                        // finally her durumda ilk ayara donebilsin.
-                        dnsMayHaveChanged = true;
-                        var failures = new List<string>();
+                        if (_closing) return;
+                        _busy = false;
+                        if (outcome.ConfigWarning != null || (outcome.Run != null && outcome.Run.Code == "CONFIG_WRITTEN"))
+                            _configWarning = outcome.ConfigWarning;
+                        _power.SetBusy(false);
+                        SetRepairBusy(false);
 
-                        foreach (DnsProvider provider in NetworkRepair.DohProviders)
+                        if (outcome.EngineError != null)
                         {
-                            RepairProgress("3/4 · " + provider.Name + " şifreli DNS deneniyor",
-                                           "Başarısız olursa sıradaki güvenli sağlayıcı denenecek");
-
-                            if (!NetworkRepair.ConfigureDoh(dnsBackup, provider,
-                                                            NetworkRepair.RepairTargets, out dnsError))
-                            {
-                                failures.Add(provider.Name + ": " + dnsError);
-                                dnsTrace.AppendLine(provider.Name + " kurulum hatası: " + dnsError);
-                            }
-                            else
-                            {
-                                Thread.Sleep(500);
-                                RepairProgress("4/4 · Discord ve Roblox bağlantısı doğrulanıyor",
-                                               provider.Name + " üzerinden gerçek hedefler sınanıyor");
-                                run = ExecuteTuner(tuner);
-                                MergeCopies(run, closedCopies);
-                                dnsTrace.AppendLine("=== " + provider.Name + " sonrası tanı ===");
-                                dnsTrace.AppendLine(run.Output);
-
-                                if (!IsDnsProblem(run.Code))
-                                {
-                                    keepDns = true;
-                                    dnsProvider = provider.Name;
-                                    NetworkRepair.MarkManagedDns(dnsBackup, provider);
-                                    break;
-                                }
-
-                                failures.Add(provider.Name + ": hedefler hâlâ çözümlenemedi (" + run.Code + ")");
-                            }
-
-                            // Sonraki saglayiciyi tamamen temiz bir baslangictan dene.
-                            string restoreError;
-                            if (!NetworkRepair.RestoreForRetry(dnsBackup, out restoreError))
-                            {
-                                repairError = "DNS denemesi geri alınamadı: " + restoreError;
-                                break;
-                            }
+                            SetLastError(outcome.EngineError);
+                            ApplyState();
+                            MessageBox.Show(this, _lastError, "etodpx - koruma yeniden açılamadı",
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
                         }
 
-                        if (!keepDns && repairError == null)
-                            dnsRepairError = failures.Count == 0
-                                ? "Bu Windows sürümü güvenli DNS onarımını desteklemiyor."
-                                : string.Join(" | ", failures.ToArray());
-                    }
-                }
+                        SetLastError(null);
+                        if (outcome.RepairError != null)
+                        {
+                            _repairFailed = true;
+                            _lastRepairMessage = "Otomatik düzeltme tamamlanamadı · tekrar deneyebilirsin";
+                            _repairFollowUp = RepairFollowUp.Retry;
+                            _lastRepairLogPath = outcome.LogPath;
+                            ApplyState();
+                            string detail = outcome.RepairError;
+                            if (outcome.LogPath != null) detail += "\n\nTanı raporu:\n" + outcome.LogPath;
+                            MessageBox.Show(this, detail, "etodpx - otomatik düzeltme durdu",
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
 
-                if (run != null && run.Code == "CONFIG_WRITTEN") ReloadConfig();
-            }
-            catch (Exception ex)
-            {
-                repairError = ex.Message;
-            }
-            finally
-            {
-                if (dnsMayHaveChanged && !keepDns && dnsBackup != null)
-                {
-                    string restoreError;
-                    if (!NetworkRepair.Restore(dnsBackup, out restoreError))
-                    {
-                        string prefix = repairError == null ? string.Empty : repairError + "\n\n";
-                        repairError = prefix + "Eski DNS ayarı da otomatik geri yüklenemedi: " + restoreError;
-                    }
-                }
-
-                // Tani nasil biterse bitsin kullaniciyi korumasiz birakma.
-                try
-                {
-                    if (!_closing && !_engine.IsRunning) StartEngineWithRecovery();
-                }
-                catch (Exception ex) { engineError = ex.Message; }
-            }
-
-            string logPath = SaveRepairLog(run, firstRun, repairError, engineError, keepDns,
-                                           dnsProvider, dnsRepairError, dnsTrace.ToString());
-
-            if (_closing) return;
-            try
-            {
-                Dispatcher.BeginInvoke(new Action(delegate
-                {
-                    if (_closing) return;
-                    _busy = false;
-                    _power.SetBusy(false);
-                    SetRepairBusy(false);
-
-                    if (engineError != null)
-                    {
-                        SetLastError(engineError);
+                        _repairFailed = false;
+                        _lastRepairMessage = null;
+                        _repairFollowUp = RepairFollowUp.None;
+                        _lastRepairLogPath = outcome.LogPath;
                         ApplyState();
-                        MessageBox.Show(this, _lastError, "etodpx - koruma yeniden açılamadı",
-                            MessageBoxButton.OK, MessageBoxImage.Warning);
-                        return;
-                    }
-
-                    SetLastError(null);
-                    if (repairError != null)
-                    {
-                        _repairFailed = true;
-                        _lastRepairMessage = "Otomatik düzeltme tamamlanamadı · tekrar deneyebilirsin";
-                        _repairFollowUp = RepairFollowUp.Retry;
-                        _lastRepairLogPath = logPath;
-                        ApplyState();
-                        string detail = repairError;
-                        if (logPath != null) detail += "\n\nTanı raporu:\n" + logPath;
-                        MessageBox.Show(this, detail, "etodpx - otomatik düzeltme durdu",
-                            MessageBoxButton.OK, MessageBoxImage.Warning);
-                        return;
-                    }
-
-                    _repairFailed = false;
-                    _lastRepairMessage = null;
-                    _repairFollowUp = RepairFollowUp.None;
-                    _lastRepairLogPath = logPath;
-                    ApplyState();
-                    ShowTuneResult(run, keepDns, logPath, dnsProvider);
-                }));
-            }
-            catch (InvalidOperationException) { }
-        }
-
-        private sealed class TunerRun
-        {
-            public int ExitCode;
-            public string Code;
-            public string Output;
-            public readonly List<string> OtherCopies = new List<string>();
-        }
-
-        private TunerRun ExecuteTuner(string tuner)
-        {
-            var run = new TunerRun { ExitCode = -1, Output = string.Empty };
-            Process p = null;
-            try
-            {
-                var stdout = new System.Text.StringBuilder();
-                var stderr = new System.Text.StringBuilder();
-                p = new Process();
-                p.StartInfo = new ProcessStartInfo
-                {
-                    FileName = tuner,
-                    // Hedefler on teshiste eleniyor: yalnizca SNI engelli olanlar
-                    // taramaya giriyor, biri aciksa tarama suresi uzamiyor.
-                    Arguments = "--auto --no-manage-app --require-all-targets " +
-                                string.Join(" ", NetworkRepair.RepairTargets),
-                    WorkingDirectory = Program.AppDir(),
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                p.OutputDataReceived += delegate (object s, DataReceivedEventArgs e)
-                {
-                    if (e.Data != null) stdout.AppendLine(e.Data);
-                };
-                p.ErrorDataReceived += delegate (object s, DataReceivedEventArgs e)
-                {
-                    if (e.Data != null) stderr.AppendLine(e.Data);
-                };
-                _tuneProcess = p;
-                if (!p.Start()) throw new InvalidOperationException("Otomatik test başlatılamadı.");
-                p.BeginOutputReadLine();
-                p.BeginErrorReadLine();
-                if (!p.WaitForExit(12 * 60 * 1000))
-                {
-                    try { p.Kill(); } catch { }
-                    throw new TimeoutException("Otomatik bağlantı testi zaman aşımına uğradı.");
+                        ShowTuneResult(outcome.Run, outcome.DnsChanged, outcome.LogPath, outcome.DnsProvider);
+                    }));
                 }
-                // Asenkron cikti olaylarinin kalanini bosalt.
-                p.WaitForExit();
-                run.ExitCode = p.ExitCode;
-                run.Output = stdout.ToString();
-                if (stderr.Length > 0) run.Output += "\n" + stderr;
-                run.Code = OutputMarker(run.Output, "ETODPX_RESULT");
-                if (run.Code == null) run.Code = LegacyTunerCode(run.ExitCode, run.Output);
-                ReadOtherCopies(run);
-                return run;
-            }
-            finally
-            {
-                _tuneProcess = null;
-                if (p != null) p.Dispose();
-            }
-        }
-
-        private static List<string> CloseOtherEtodpxCopies()
-        {
-            var found = new List<string>();
-            string expected = System.IO.Path.GetFullPath(
-                System.IO.Path.Combine(Program.AppDir(), "etodpx.exe"));
-            int ownId = Process.GetCurrentProcess().Id;
-
-            foreach (var p in Process.GetProcessesByName("etodpx"))
-            {
-                try
-                {
-                    if (p.Id == ownId) continue;
-                    string actual = System.IO.Path.GetFullPath(p.MainModule.FileName);
-                    if (string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!found.Contains(actual)) found.Add(actual);
-
-                    bool exited = p.CloseMainWindow() && p.WaitForExit(2500);
-                    if (!exited)
-                    {
-                        p.Kill();
-                        p.WaitForExit(2500);
-                    }
-                }
-                catch { }
-                finally { p.Dispose(); }
-            }
-            return found;
-        }
-
-        private static void MergeCopies(TunerRun run, List<string> copies)
-        {
-            if (run == null || copies == null) return;
-            foreach (string path in copies)
-                if (!run.OtherCopies.Contains(path)) run.OtherCopies.Add(path);
-        }
-
-        private void ReloadConfig()
-        {
-            var fresh = Config.Load(System.IO.Path.Combine(Program.AppDir(), "etodpx.conf"));
-            _cfg.CopyFrom(fresh);
-            _configWarning = fresh.Warnings.Count == 0
-                ? null
-                : string.Join("\n", fresh.Warnings.ToArray());
+                catch (InvalidOperationException) { }
+            });
         }
 
         private void RepairProgress(string subtitle, string footer)
@@ -790,90 +725,6 @@ namespace Etodpx.Ui
                 }));
             }
             catch (InvalidOperationException) { }
-        }
-
-        private static bool IsDnsProblem(string code)
-        {
-            return code == "DNS_POISONED" || code == "DNS_BLOCKED" ||
-                   code == "DNS_UNAVAILABLE" || code == "DNS_UNVERIFIED";
-        }
-
-        private static string OutputMarker(string output, string key)
-        {
-            if (output == null) return null;
-            string prefix = key + "=";
-            foreach (string line in output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
-                if (line.StartsWith(prefix, StringComparison.Ordinal)) return line.Substring(prefix.Length).Trim();
-            return null;
-        }
-
-        private static string LegacyTunerCode(int exitCode, string output)
-        {
-            if (Contains(output, "Yazildi.")) return "CONFIG_WRITTEN";
-            if (Contains(output, "zaten aciliyor")) return "ALREADY_OPEN";
-            if (Contains(output, "DNS ZEHIRLI")) return "DNS_POISONED";
-            if (Contains(output, "DNS dogrulanamadi")) return "DNS_UNVERIFIED";
-            if (Contains(output, "alan adi cozulemiyor")) return "DNS_UNAVAILABLE";
-            if (Contains(output, "IP seviyesinde")) return "IP_BLOCKED";
-            if (Contains(output, "Hicbir strateji")) return "NO_STRATEGY";
-            return exitCode == 0 ? "OK" : "FAILED";
-        }
-
-        private static void ReadOtherCopies(TunerRun run)
-        {
-            const string prefix = "ETODPX_OTHER_COPY_B64=";
-            foreach (string line in run.Output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
-            {
-                if (!line.StartsWith(prefix, StringComparison.Ordinal)) continue;
-                try
-                {
-                    string path = System.Text.Encoding.UTF8.GetString(
-                        Convert.FromBase64String(line.Substring(prefix.Length).Trim()));
-                    if (path.Length > 0 && !run.OtherCopies.Contains(path)) run.OtherCopies.Add(path);
-                }
-                catch { }
-            }
-        }
-
-        private static string SaveRepairLog(TunerRun run, TunerRun firstRun, string repairError,
-                                            string engineError, bool dnsChanged, string dnsProvider,
-                                            string dnsRepairError, string dnsTrace)
-        {
-            try
-            {
-                string path = System.IO.Path.Combine(Program.AppDir(), "etodpx-repair.log");
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                sb.AppendLine("result=" + (run == null ? "NO_RESULT" : run.Code));
-                if (firstRun != null && !ReferenceEquals(firstRun, run))
-                    sb.AppendLine("first_result=" + firstRun.Code);
-                sb.AppendLine("exit_code=" + (run == null ? -1 : run.ExitCode));
-                sb.AppendLine("encrypted_dns_changed=" + dnsChanged);
-                if (dnsProvider != null) sb.AppendLine("encrypted_dns_provider=" + dnsProvider);
-                if (dnsRepairError != null)
-                    sb.AppendLine("dns_repair_error=" + OneLine(dnsRepairError));
-                if (repairError != null) sb.AppendLine("repair_error=" + repairError);
-                if (engineError != null) sb.AppendLine("engine_error=" + engineError);
-                sb.AppendLine();
-                // Iki tur varsa ikisini de yaz. Eskiden yalnizca sonuncusu
-                // kaliyordu ve baslangic durumu raporlardan okunamiyordu.
-                if (firstRun != null && !ReferenceEquals(firstRun, run))
-                {
-                    sb.AppendLine("=== 1. tani (degisiklikten once) ===");
-                    sb.AppendLine(firstRun.Output);
-                    sb.AppendLine("=== 2. tani (sifreli DNS kurulduktan sonra) ===");
-                }
-                if (run != null) sb.Append(run.Output);
-                if (!string.IsNullOrEmpty(dnsTrace))
-                {
-                    sb.AppendLine();
-                    sb.AppendLine("=== şifreli DNS sağlayıcı denemeleri ===");
-                    sb.Append(dnsTrace);
-                }
-                File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
-                return path;
-            }
-            catch { return null; }
         }
 
         private void ShowTuneResult(TunerRun run, bool dnsChanged, string logPath,
@@ -905,7 +756,7 @@ namespace Etodpx.Ui
                 return;
             }
 
-            if (IsDnsProblem(code))
+            if (RepairController.IsDnsProblem(code))
             {
                 _repairFailed = true;
                 _repairFollowUp = RepairFollowUp.NetworkSettings;
@@ -960,59 +811,6 @@ namespace Etodpx.Ui
             return path == null ? string.Empty : "\n\nTanı raporu:\n" + path;
         }
 
-        private static bool Contains(string text, string value)
-        {
-            return text != null && text.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static void OpenNetworkSettings()
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "ms-settings:network",
-                    UseShellExecute = true
-                });
-            }
-            catch
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "control.exe",
-                        Arguments = "/name Microsoft.NetworkAndSharingCenter",
-                        UseShellExecute = true
-                    });
-                }
-                catch { }
-            }
-        }
-
-        private void OpenRepairLog()
-        {
-            try
-            {
-                if (!string.IsNullOrEmpty(_lastRepairLogPath) && File.Exists(_lastRepairLogPath))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = _lastRepairLogPath,
-                        UseShellExecute = true
-                    });
-                    return;
-                }
-            }
-            catch { }
-            OpenAppFolder();
-        }
-
-        private static string OneLine(string value)
-        {
-            return (value ?? string.Empty).Replace("\r", " ").Replace("\n", " ").Trim();
-        }
-
         private void SetRepairBusy(bool busy, string busyText = null)
         {
             if (_repairButton == null) return;
@@ -1047,9 +845,9 @@ namespace Etodpx.Ui
                 return;
             }
 
-            if (IsDriverSecurityError(_lastErrorRaw))
+            if (RepairController.IsDriverSecurityError(_lastErrorRaw))
                 _repairText.Text = "Windows güvenlik ayarını aç";
-            else if (IsPackageError(_lastErrorRaw))
+            else if (RepairController.IsPackageError(_lastErrorRaw))
                 _repairText.Text = "Paket klasörünü aç";
             else
                 _repairText.Text = "Sorunu düzelt ve tekrar dene";
@@ -1060,15 +858,15 @@ namespace Etodpx.Ui
 
         private void OnErrorRepairClick()
         {
-            if (IsDriverSecurityError(_lastErrorRaw))
+            if (RepairController.IsDriverSecurityError(_lastErrorRaw))
             {
-                OpenDriverSecuritySettings();
+                RepairController.OpenDriverSecuritySettings();
                 return;
             }
 
-            if (IsPackageError(_lastErrorRaw))
+            if (RepairController.IsPackageError(_lastErrorRaw))
             {
-                OpenAppFolder();
+                RepairController.OpenAppFolder();
                 MessageBox.Show(this,
                     "Bu klasörde WinDivert.dll ve WinDivert64.sys birlikte bulunmalı. " +
                     "Dosyalardan biri yoksa ZIP'i yeniden indirip tamamını çıkar.",
@@ -1096,7 +894,7 @@ namespace Etodpx.Ui
                 try
                 {
                     _engine.Stop();
-                    StartEngineWithRecovery();
+                    _repair.StartEngineWithRecovery();
                 }
                 catch (Exception ex)
                 {
@@ -1134,144 +932,10 @@ namespace Etodpx.Ui
             });
         }
 
-        private void StopTuner()
-        {
-            var p = _tuneProcess;
-            if (p == null) return;
-            try { if (!p.HasExited) p.Kill(); } catch { }
-        }
-
-        // Eski GoodbyeDPI/zapret kurulumlarindan kalan devre disi WinDivert servisi
-        // acilisi engelliyor. Yonetici oldugumuz icin temizleyip tekrar deniyoruz.
-        private void StartEngineWithRecovery()
-        {
-            try
-            {
-                _engine.Start();
-            }
-            catch (Exception ex)
-            {
-                if (!Contains(ex.Message, "devre dışı bırakılmış eski bir WinDivert")) throw;
-                try { _engine.Stop(); } catch { }
-                if (!RepairDisabledWinDivert()) throw;
-                Thread.Sleep(700);
-                _engine.Start();
-            }
-        }
-
-        private static bool RepairDisabledWinDivert()
-        {
-            // WinDivert gecici bir servis: sc stop son tutamagi kapatinca kendini
-            // kayittan silebiliyor. Sonraki sc delete o zaman 1060 verir - basari.
-            RunSc("stop WinDivert");
-            Thread.Sleep(250);
-            if (!ServiceExists("WinDivert")) return true;
-
-            RunSc("delete WinDivert");
-            for (int i = 0; i < 8; i++)
-            {
-                if (!ServiceExists("WinDivert")) return true;
-                Thread.Sleep(250);
-            }
-            return !ServiceExists("WinDivert");
-        }
-
-        private static bool ServiceExists(string name)
-        {
-            return RunSc("query " + name);
-        }
-
-        private static bool RunSc(string arguments)
-        {
-            try
-            {
-                using (var p = Process.Start(new ProcessStartInfo
-                {
-                    FileName = "sc.exe",
-                    Arguments = arguments,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }))
-                {
-                    if (p == null) return false;
-                    if (!p.WaitForExit(5000))
-                    {
-                        try { p.Kill(); } catch { }
-                        return false;
-                    }
-                    return p.HasExited && p.ExitCode == 0;
-                }
-            }
-            catch { return false; }
-        }
-
-        private static string FriendlyError(string message)
-        {
-            if (Contains(message, "WinDivert.dll bulunamadı") || Contains(message, "sürücü dosyası"))
-                return "Paket eksik görünüyor. ZIP'i yeniden indir, sağ tıklayıp “Tümünü ayıkla” de ve çıkan klasördeki etodpx.exe'yi aç.";
-            if (Contains(message, "imzası Windows tarafından kabul edilmedi"))
-                return "Windows ağ sürücüsünü engelledi. Windows Güvenliği > Cihaz güvenliği > Çekirdek yalıtımı bölümünü kontrol edip bilgisayarı yeniden başlat.";
-            if (Contains(message, "devre dışı bırakılmış eski bir WinDivert"))
-                return "Eski ağ sürücüsü otomatik temizlenemedi. Bilgisayarı yeniden başlatıp etodpx'i tekrar aç.";
-            return message;
-        }
-
         private void SetLastError(string raw)
         {
             _lastErrorRaw = raw;
-            _lastError = raw == null ? null : FriendlyError(raw);
-        }
-
-        private static bool IsPackageError(string message)
-        {
-            return Contains(message, "WinDivert.dll bulunamadı") ||
-                   Contains(message, "sürücü dosyası") ||
-                   Contains(message, "Paket eksik");
-        }
-
-        private static bool IsDriverSecurityError(string message)
-        {
-            return Contains(message, "imzası Windows tarafından kabul edilmedi") ||
-                   Contains(message, "Sürücü Windows tarafından engellendi") ||
-                   Contains(message, "Çekirdek yalıtımı") ||
-                   Contains(message, "Bellek bütünlüğü");
-        }
-
-        private static void OpenDriverSecuritySettings()
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "windowsdefender://coreisolation",
-                    UseShellExecute = true
-                });
-            }
-            catch
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "ms-settings:windowsdefender",
-                        UseShellExecute = true
-                    });
-                }
-                catch { }
-            }
-        }
-
-        private static void OpenAppFolder()
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = Program.AppDir(),
-                    UseShellExecute = true
-                });
-            }
-            catch { }
+            _lastError = raw == null ? null : RepairController.FriendlyError(raw);
         }
 
         private void OnEngineFault(string message)
@@ -1329,7 +993,10 @@ namespace Etodpx.Ui
                 _title.Text = "KAPALI";
                 _subtitle.Text = "Korumayı başlatmak için dokun";
                 _footer.Foreground = _configWarning == null ? _sub : _danger;
-                _footer.Text = _configWarning == null ? string.Empty : "Ayar uyarısı · " + _configWarning;
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(_dnsNotice)) parts.Add(_dnsNotice);
+                if (_configWarning != null) parts.Add("Ayar uyarısı · " + _configWarning);
+                _footer.Text = string.Join(" · ", parts.ToArray());
             }
             RefreshStats();
         }
@@ -1359,6 +1026,8 @@ namespace Etodpx.Ui
                 return _lastRepairMessage;
 
             var parts = new List<string>();
+            if (!string.IsNullOrEmpty(_dnsNotice))
+                parts.Add(_dnsNotice);
             if (_engine.QuicWarning != null)
                 parts.Add("Hızlı bağlantı kullanılamadı, standart koruma devam ediyor");
             if (_configWarning != null)
@@ -1371,7 +1040,7 @@ namespace Etodpx.Ui
             if (!_engine.IsRunning) return;
             var s = _engine.Stats;
 
-            // Sayacı kalabalıklastirmiyoruz; gonderim hatasi varsa alt satirda belirtiyoruz.
+            // Sayaci kalabaliklastirmiyoruz; gonderim hatasi varsa alt satirda belirtiyoruz.
             if (_lastError == null)
             {
                 long errs = s.SendErrors;

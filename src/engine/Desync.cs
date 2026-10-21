@@ -10,15 +10,20 @@ namespace Etodpx.Engine
         private const int BufSize = 0x10000 + 64;
         // 1200 = QUIC Initial alt siniri, 1280 = IPv6 asgari MTU. Arasi.
         private const int QuicFakeSize = 1250;
+        // Devam segmentinin kopyasi genelde zaten hazir; bu yalnizca ust sinir.
+        // Asilirsa paket eskisi gibi dokunulmadan gider.
+        internal const int ContinuationWaitMs = 30;
 
         private readonly Config _cfg;
         private readonly Stats _stats;
         private readonly IntPtr _handle;
-        private readonly Hostlist _hosts;      // null = butun adlara dokun
+        private volatile Hostlist _hosts;      // null = butun adlara dokun
+        private readonly ContinuationTable _continuations;   // null = parcali ClientHello birlestirilmez
 
-        private readonly IntPtr _recvMem, _workMem, _fakeTlsMem, _fakeHttpMem, _quicMem;
+        private readonly IntPtr _recvMem, _workMem, _fakeTlsMem, _fakeHttpMem, _quicMem, _asmMem;
         private readonly byte* _recv;
         private readonly byte* _work;
+        private readonly byte* _asm;           // birlestirilmis ClientHello
         private readonly byte* _fakeTlsP;
         private readonly byte* _fakeHttpP;
         private readonly byte* _quicP;
@@ -34,17 +39,26 @@ namespace Etodpx.Engine
 
         // hosts = null: liste kullanilmaz, butun adlara dokunulur. Oz test
         // eslesme disi davranisi bu sekilde siniyor.
-        public DesyncWorker(Config cfg, Stats stats, IntPtr handle, int seed, Hostlist hosts = null)
+        // continuations = null: SNI'si ikinci segmente tasan ClientHello'ya
+        // eskisi gibi yalnizca ilk segmente bakilarak karar verilir.
+        public DesyncWorker(Config cfg, Stats stats, IntPtr handle, int seed, Hostlist hosts = null,
+                            ContinuationTable continuations = null)
         {
             _cfg = cfg;
             _stats = stats;
             _handle = handle;
             _hosts = hosts;
+            _continuations = continuations;
 
             _recvMem = Marshal.AllocHGlobal(BufSize);
             _workMem = Marshal.AllocHGlobal(BufSize);
             _recv = (byte*)_recvMem;
             _work = (byte*)_workMem;
+            if (continuations != null)
+            {
+                _asmMem = Marshal.AllocHGlobal(BufSize);
+                _asm = (byte*)_asmMem;
+            }
 
             byte[] tls = Fakes.BuildTlsClientHello(cfg.FakeSni);
             byte[] http = Fakes.BuildHttpRequest(cfg.FakeSni);
@@ -73,6 +87,12 @@ namespace Etodpx.Engine
             _ipId = (ushort)(Environment.TickCount + seed * 4099);
             _rngState = (uint)(Environment.TickCount ^ (seed * 0x9E3779B9));
             if (_rngState == 0) _rngState = 0x1234567;
+        }
+
+        // Canli hostlist yenilemesi: yeni liste hazir oldugunda atomik olarak degistirilir.
+        public void SetHostlist(Hostlist hosts)
+        {
+            _hosts = hosts;
         }
 
         private static void ParseMode(string m, out bool fake, out bool split, out bool disorder)
@@ -201,21 +221,81 @@ namespace Etodpx.Engine
                 return false;
             }
 
-            if (!wantFake && !wantSplit) return false;
+            Hostlist hosts = _hosts;
+            if (!wantFake && !wantSplit && hosts == null) return false;
+
+            // Alan adi bu segmentte yoksa ClientHello sonraki segmente tasmistir
+            // (Wi-Fi gibi LSO'suz kartlarda olagan). Karar birlesik mesaj uzerinden
+            // veriliyor; gonderilen veri yine yalnizca bu segment.
+            byte* msg = pl;
+            int msgLen = plLen;
+            bool needHost = hosts != null || (wantSplit && _fixedSplitPos == 0);
+            if (isTls && needHost && _continuations != null && NeedsContinuation(pl, plLen))
+            {
+                int more = _continuations.CopyNext(_recv, ref v, _asm + plLen, BufSize - plLen,
+                                                   ContinuationWaitMs);
+                if (more > 0)
+                {
+                    Packet.Copy(_asm, pl, plLen);
+                    msg = _asm;
+                    msgLen = plLen + more;
+                }
+            }
+
+            bool splitAtHostStart = _splitAtHostStart;
+            int fixedSplitPos = _fixedSplitPos;
+            bool fakeBadSum = _cfg.FakeBadSum;
+            bool fakeWrongSeq = _cfg.FakeWrongSeq;
+            bool fakeTtl = _cfg.FakeTtl;
+            int fakeTtlValue = _cfg.EffectiveFakeTtl(v.IsV6);
 
             // Liste varsa listede olmayan hicbir ada dokunmuyoruz. Engelli
             // olmayan bir sunucuya giden paketi bolmenin faydasi yok; DPI onu
             // tuhaf bulup dusurunce baglanti TCP zaman asimi merdivenini
             // tirmaniyor ve uygulama saniyelerce donuyor.
-            if (_hosts != null && !InHostlist(pl, plLen, isTls)) return false;
+            if (hosts != null)
+            {
+                HostRule rule;
+                if (!MatchHostlist(hosts, msg, msgLen, isTls, out rule)) return false;
+
+                if (rule.HasOverride)
+                {
+                    wantFake = (rule.Flags & HostFlags.Fake) != 0;
+                    wantSplit = (rule.Flags & HostFlags.Split) != 0;
+                    wantDisorder = (rule.Flags & HostFlags.Disorder) != 0;
+
+                    bool anyFakeOverride = (rule.Flags & (HostFlags.BadSum | HostFlags.WrongSeq | HostFlags.Ttl)) != 0;
+                    if (anyFakeOverride)
+                    {
+                        fakeBadSum = (rule.Flags & HostFlags.BadSum) != 0;
+                        fakeWrongSeq = (rule.Flags & HostFlags.WrongSeq) != 0;
+                        fakeTtl = (rule.Flags & HostFlags.Ttl) != 0;
+                        if (fakeTtl && rule.TtlValue > 0) fakeTtlValue = rule.TtlValue;
+                    }
+
+                    if (rule.FixedSplitPos > 0)
+                    {
+                        fixedSplitPos = rule.FixedSplitPos;
+                        splitAtHostStart = false;
+                    }
+                    else
+                    {
+                        fixedSplitPos = 0;
+                        splitAtHostStart = (rule.Flags & HostFlags.SplitMidSld) == 0;
+                    }
+                }
+            }
+
+            if (!wantFake && !wantSplit) return false;
 
             // bolme konumunu sec
             int splitPos = -1;
             if (wantSplit)
             {
                 bool hostFound;
-                splitPos = ChooseSplitPos(pl, plLen, isTls, _splitAtHostStart, _fixedSplitPos, out hostFound);
+                splitPos = ChooseSplitPos(msg, msgLen, isTls, splitAtHostStart, fixedSplitPos, out hostFound);
                 if (hostFound) _stats.BumpHost();
+                splitPos = FitSplitToSegment(splitPos, plLen, isTls, fixedSplitPos);
             }
 
             // Gonderecek bir sey yoksa tampona dokunmadan cik: WorkerLoop paketi
@@ -239,18 +319,18 @@ namespace Etodpx.Engine
                 for (int r = 0; r < _cfg.FakeCount; r++)
                 {
                     // Bozuk checksum: DPI genelde dogrulamaz, sunucunun TCP yigini atar.
-                    if (_cfg.FakeBadSum)
+                    if (fakeBadSum)
                         anyFakeSent |= SendTcp(ref v, hdrLen, fakePayload, fakeLen, seq, flags, ref addr, true, 0);
 
                     // Pencere disi seq: checksum dogrulayan DPI icin. Sunucu eski veri sayip atar.
-                    if (_cfg.FakeWrongSeq)
+                    if (fakeWrongSeq)
                         anyFakeSent |= SendTcp(ref v, hdrLen, fakePayload, fakeLen,
                                 unchecked(seq - (uint)_cfg.FakeWrongSeqDelta), flags, ref addr, false, 0);
 
                     // Dusuk TTL: DPI'i gecer, sunucuya varmadan oler. Deger fazla
                     // gelirse sahte paket sunucuya ulasip baglantiyi bozar.
-                    if (_cfg.FakeTtl)
-                        anyFakeSent |= SendTcp(ref v, hdrLen, fakePayload, fakeLen, seq, flags, ref addr, false, (byte)_cfg.FakeTtlValue);
+                    if (fakeTtl)
+                        anyFakeSent |= SendTcp(ref v, hdrLen, fakePayload, fakeLen, seq, flags, ref addr, false, (byte)fakeTtlValue);
                 }
                 if (anyFakeSent) _stats.BumpFake();
             }
@@ -296,13 +376,24 @@ namespace Etodpx.Engine
             return true;
         }
 
+        // TLS kaydi elimizdeki yukten uzunsa ClientHello sonraki segmente tasiyor.
+        // SNI bu kisimda bulunamadiysa devami olmadan karar verilemez.
+        internal static bool NeedsContinuation(byte* pl, int plLen)
+        {
+            if (plLen < 9) return false;
+            int recLen = (pl[3] << 8) | pl[4];
+            if (recLen + 5 <= plLen) return false;
+            return !Hostname.FindSni(pl, plLen).Found;
+        }
+
         // Yukteki alan adi listede mi. Ad okunamiyorsa dokunmuyoruz: ne
         // oldugunu bilmedigimiz bir baglantiyi bozma riskini almaya degmez.
-        private bool InHostlist(byte* pl, int plLen, bool isTls)
+        private static bool MatchHostlist(Hostlist hosts, byte* pl, int plLen, bool isTls, out HostRule rule)
         {
+            rule = default(HostRule);
             HostLocation h = isTls ? Hostname.FindSni(pl, plLen) : Hostname.FindHttpHost(pl, plLen);
             if (!h.Found) return false;
-            return _hosts.Match(pl + h.Offset, h.Length);
+            return hosts.MatchRule(pl + h.Offset, h.Length, out rule);
         }
 
         // -1 donerse bolme yapilmaz.
@@ -332,6 +423,18 @@ namespace Etodpx.Engine
             }
 
             return pos <= 0 || pos >= plLen ? -1 : pos;
+        }
+
+        // Konum birlesik mesaja gore hesaplaniyor ama bolme yalnizca elimizdeki
+        // segmentin icinde yapilabilir; tasarsa ikinci parcanin uzunlugu eksiye
+        // duser. Alan adi sonraki segmentteyse bulunamamis gibi varsayilan konuma
+        // dusuluyor; sabit konum segmente sigmiyorsa eskisi gibi bolme yok.
+        internal static int FitSplitToSegment(int pos, int segLen, bool isTls, int fixedSplitPos)
+        {
+            if (pos < segLen) return pos;
+            if (fixedSplitPos > 0) return -1;
+            int fallback = isTls ? 3 : 2;
+            return fallback < segLen ? fallback : -1;
         }
 
         // --- QUIC
@@ -375,7 +478,8 @@ namespace Etodpx.Engine
             // "fake": once cozulemeyecek bir Initial (dusuk TTL), sonra gercegi
             PrepareQuicFake(version);
             RefreshQuicIds();
-            bool fakeSent = SendUdp(ref v, v.PayloadOffset, _quicP, _quicLen, ref addr, (byte)_cfg.FakeTtlValue);
+            int quicTtl = _cfg.EffectiveFakeTtl(v.IsV6);
+            bool fakeSent = SendUdp(ref v, v.PayloadOffset, _quicP, _quicLen, ref addr, (byte)quicTtl);
             bool realSent = SendUdp(ref v, v.PayloadOffset, v.Payload, v.PayloadLength, ref addr, 0);
 
             if (!realSent) return false;       // WorkerLoop orijinal datagrami yollar
@@ -499,6 +603,7 @@ namespace Etodpx.Engine
             Marshal.FreeHGlobal(_fakeTlsMem);
             Marshal.FreeHGlobal(_fakeHttpMem);
             Marshal.FreeHGlobal(_quicMem);
+            if (_asmMem != IntPtr.Zero) Marshal.FreeHGlobal(_asmMem);
         }
     }
 }

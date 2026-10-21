@@ -22,6 +22,7 @@ etodpx-test.log
 # Depodaki sablon kok dizindeki etodpx.conf; bin/etodpx.conf kisiye ozeldir
 # (etodpx-tune.exe hatta gore yazar).
 bin/etodpx.conf
+etodpx-dns-backup-*.conf
 
 # Uretilen simge onizlemeleri (assets/etodpx.ico DEPOYA GIRER) --------------
 assets/preview-*.png
@@ -29,6 +30,11 @@ assets/etodpx-?.ico
 
 # Uretilen paylasim paketi ------------------------------------------------
 release/
+
+# Yapay zeka / arac dosyalari ---------------------------------------------
+AGENTS.md
+CLAUDE.md
+.claude/
 
 # Isletim sistemi / editor ------------------------------------------------
 Thumbs.db

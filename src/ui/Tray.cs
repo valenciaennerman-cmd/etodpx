@@ -16,6 +16,7 @@ namespace Etodpx.Ui
         private readonly Window _window;
         private readonly DpiEngine _engine;
         private readonly System.Windows.Forms.Timer _poll;
+        private readonly ToolStripMenuItem _startupItem;
         private bool _lastRunning;
         private bool _synced;   // ilk ipucu yazimi yapildi mi
 
@@ -26,6 +27,23 @@ namespace Etodpx.Ui
 
             var menu = new ContextMenuStrip();
             menu.Items.Add("Göster", null, delegate { Restore(); });
+            menu.Items.Add("Engelli site ekle…", null, delegate
+            {
+                _window.Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    var main = _window as MainWindow;
+                    if (main != null) main.PromptAddDomain();
+                }));
+            });
+
+            _startupItem = new ToolStripMenuItem("Windows açılışında başlat");
+            _startupItem.Click += OnStartupClick;
+            menu.Items.Add(_startupItem);
+            menu.Opening += delegate
+            {
+                try { _startupItem.Checked = StartupTask.IsEnabled(); } catch { }
+            };
+
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Çıkış", null, delegate
             {
@@ -59,6 +77,22 @@ namespace Etodpx.Ui
             _poll.Tick += delegate { UpdateTooltip(); };
             _poll.Start();
             UpdateTooltip();
+        }
+
+        private void OnStartupClick(object sender, EventArgs e)
+        {
+            bool target = !_startupItem.Checked;
+            string error;
+            if (!StartupTask.SetEnabled(target, out error))
+            {
+                _window.Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    MessageBox.Show("Windows başlangıç görevi güncellenemedi:\n\n" + error,
+                        "etodpx - başlangıç görevi", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }));
+                return;
+            }
+            _startupItem.Checked = target;
         }
 
         private static Icon LoadIcon()

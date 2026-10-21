@@ -243,6 +243,7 @@ etodpx'i yeniden başlat.
 | `split_pos` | `host` | `host`, `midsld` veya sabit bayt sayısı |
 | `fake_ttl` | `false` | Sahte TCP paketini düşük TTL ile yolla; önce ayarlayıcıyla ölçülmeli |
 | `fake_ttl_value` | `4` | **Hatta göre değişir** — `etodpx-tune.exe` ile bul |
+| `fake_ttl_value_v6` | `0` | IPv6 için ayrı hop-limit (`0` = `fake_ttl_value` ile aynı) |
 | `fake_badsum` | `false` | Sahteyi bozuk checksum ile yolla |
 | `fake_wrongseq` | `false` | Sahteyi pencere dışı sıra numarasıyla yolla |
 | `http_host_case` | `false` | HTTP `Host:` başlığını RFC uyumlu `hOSt:` biçimine dönüştürür |
@@ -268,7 +269,7 @@ Eşleşme nokta sınırında son ektir: `roblox.com` satırı `www.roblox.com`,
 `apis.roblox.com`, `gamejoin.roblox.com` gibi bütün alt adları da kapsar —
 alt adlar için ayrı satır yazmana gerek yok. `notroblox.com` eşleşmez.
 
-Başka bir engelli site için adını alt satıra ekleyip etodpx'i yeniden başlat.
+Başka bir engelli site için pencerenin sağ üstündeki **`+`** düğmesini (veya tepsi simgesi menüsündeki **Engelli site ekle…** seçeneğini) kullanabilir ya da adını doğrudan `bin\hosts.txt` alt satırına yazabilirsin; dosya değiştiğinde yeniden başlatmaya gerek kalmadan **canlı yüklenir**. İstersen tek bir alan adına özel strateji de tanımlayabilirsin (ör. `x.com fake+disorder ttl=5 midsld`).
 Ama **önce ölç, sonra ekle**: engelli olmayan bir adı listeye koymak yalnızca
 zarar verir. DPI kutusu bölünmüş paketi düşürünce Windows yeniden gönderir ve
 bağlantı TCP zaman aşımı merdivenini tırmanır — oyun içinde 30 saniyelik donma
